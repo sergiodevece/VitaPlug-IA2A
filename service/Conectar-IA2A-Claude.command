@@ -3,11 +3,6 @@ set -euo pipefail
 set +x
 
 cd "$(dirname "$0")"
-if /usr/bin/pgrep -x 'Logic Pro' >/dev/null 2>&1; then
-    printf '%s\n' 'Guarda la sesión, sal de Logic Pro y vuelve a abrir este archivo.'
-    exit 1
-fi
-
 if ! command -v node >/dev/null; then
     printf '%s\n' 'El servicio necesita Node 22.18 o posterior en Terminal.'
     exit 1

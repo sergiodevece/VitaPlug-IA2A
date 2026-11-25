@@ -15,6 +15,16 @@
           "enum": [
             "voice",
             "drums",
+            "kick",
+            "snare",
+            "percussion",
+            "bass",
+            "guitar",
+            "keys",
+            "synth",
+            "strings",
+            "brass",
+            "mix",
             "other"
           ]
         },
@@ -37,83 +47,10 @@
             "maxLength": 640
           },
           "minItems": 0,
-          "maxItems": 8
+          "maxItems": 12
         },
         "features": {
-          "type": "object",
-          "properties": {
-            "peakDb": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "rmsDb": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "phraseSpreadDb": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "crestDb": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "highRatioDb": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "midHighEnergy": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "sideHighEnergy": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "referenceContrastDb": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "referenceOverlap": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "attackDb": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "decayDb": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "monoFoldDb": {
-              "type": "number",
-              "minimum": -1000,
-              "maximum": 1000
-            },
-            "usable": {
-              "type": "boolean"
-            },
-            "hasReference": {
-              "type": "boolean"
-            },
-            "hasReferenceSignal": {
-              "type": "boolean"
-            }
-          },
-          "required": [],
-          "additionalProperties": false
+          "$ref": "#/$defs/features"
         },
         "previousGoal": {
           "anyOf": [
@@ -136,6 +73,55 @@
         },
         "pendingSettings": {
           "$ref": "#/$defs/settingsSummary"
+        },
+        "previousResult": {
+          "type": "object",
+          "properties": {
+            "outcome": {
+              "enum": [
+                "candidate",
+                "keep",
+                "clarify",
+                "cancelled"
+              ]
+            },
+            "before": {
+              "$ref": "#/$defs/features"
+            },
+            "after": {
+              "$ref": "#/$defs/features"
+            },
+            "midReductionDb": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            },
+            "sideReductionDb": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000
+            }
+          },
+          "required": [
+            "outcome",
+            "midReductionDb",
+            "sideReductionDb"
+          ],
+          "additionalProperties": false
+        },
+        "lastAction": {
+          "enum": [
+            "applied",
+            "discarded",
+            "undone"
+          ]
+        },
+        "sourceOrigin": {
+          "enum": [
+            "host-name",
+            "user",
+            "unknown"
+          ]
         }
       },
       "required": [
@@ -166,7 +152,9 @@
                   "bringForward",
                   "air",
                   "preserveAttack",
-                  "releaseTails"
+                  "releaseTails",
+                  "reduceAttack",
+                  "easeCompression"
                 ]
               },
               "intensity": {
@@ -182,7 +170,7 @@
             "additionalProperties": false
           },
           "minItems": 1,
-          "maxItems": 5
+          "maxItems": 7
         },
         "allowLR": {
           "type": "boolean"
@@ -377,6 +365,127 @@
         "mid",
         "side"
       ],
+      "additionalProperties": false
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "peakDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "rmsDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "phraseSpreadDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "crestDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "highRatioDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "midHighEnergy": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "sideHighEnergy": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "referenceContrastDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "referenceOverlap": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "attackDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "decayDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "monoFoldDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "usable": {
+          "type": "boolean"
+        },
+        "hasReference": {
+          "type": "boolean"
+        },
+        "hasReferenceSignal": {
+          "type": "boolean"
+        },
+        "highSpreadDb": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "midEnergy": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "sideEnergy": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000
+        },
+        "sideTailRatioDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "highPulseCorrelation": {
+          "type": "number",
+          "minimum": -1,
+          "maximum": 1
+        },
+        "clippedFraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "monitorDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
+        },
+        "activeWindows": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        },
+        "phraseWindows": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000
+        }
+      },
+      "required": [],
       "additionalProperties": false
     }
   },

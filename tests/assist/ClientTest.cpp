@@ -1,9 +1,60 @@
 #include "assist/Client.h"
+#include "calibration/Calibrator.h"
 #include <iostream>
 #include <stdexcept>
 
 static void expect(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
+}
+
+static void expectClaudeConversation(const char* endpoint) {
+    using namespace ia2a;
+    Client claude(endpoint,"test-token");
+    Turn turn;
+    turn.requestId="native-chat-1";
+    turn.source="other";
+    turn.sourceOrigin="unknown";
+    turn.channels=2;
+    turn.prompt=juce::String::fromUTF8("¿Puedes quitarle ese punto que se come el resto?");
+    Features features;
+    features.usable=true;
+    features.attackDb=6;
+    features.decayDb=10;
+    features.highSpreadDb=4;
+    features.sideEnergy=.012f;
+    features.sideTailRatioDb=-8;
+    features.highPulseCorrelation=.2f;
+    turn.features=turnFeatures(features);
+
+    const auto question=claude.request(turn);
+    expect(question.kind==ClientReply::Kind::question,"Claude should ask what an unclear source is");
+
+    turn.history.add(turn.prompt);
+    turn.history.add(question.text);
+    turn.requestId="native-chat-2";
+    turn.prompt=juce::String::fromUTF8("Es un bajo con púa. La primera nota de cada frase pega un latigazo.");
+    const auto softer=claude.request(turn);
+    expect(softer.kind==ClientReply::Kind::goal && softer.goal.priorities.size()==1 &&
+           softer.goal.priorities.front().objective==Objective::ReduceAttack,"Claude should use the free-form answer and measured attack");
+
+    Calibration trial;
+    trial.outcome=Outcome::Candidate;
+    trial.before=features;
+    trial.after=features;
+    trial.after.attackDb=3.5f;
+    trial.midReductionDb=4;
+    trial.sideReductionDb=1;
+    turn.history.add(turn.prompt);
+    turn.history.add(softer.text);
+    turn.requestId="native-chat-3";
+    turn.prompt=juce::String::fromUTF8("Casi, pero ahora deja que tenga un pelín más de vida.");
+    turn.previousGoal=softer.wireGoal;
+    turn.previousResult=turnResult(trial);
+    turn.lastAction="applied";
+    turn.hasApplied=true;
+    const auto ease=claude.request(turn);
+    expect(ease.kind==ClientReply::Kind::goal && ease.goal.priorities.size()==1 &&
+           ease.goal.priorities.front().objective==Objective::EaseCompression,"Claude should refine the preceding measured trial");
 }
 
 int main(int argc, char** argv) {
@@ -49,6 +100,7 @@ int main(int argc, char** argv) {
             turn.features.getDynamicObject()->setProperty("pcm","forbidden");
             expect(local.request(turn).kind == ClientReply::Kind::error, "invalid request accepted");
         }
+        if(argc>=3 && juce::String(argv[2])=="claude") expectClaudeConversation(argv[1]);
     } catch (const std::exception& ex) { std::cerr << ex.what() << '\n'; return 1; }
     return 0;
 }

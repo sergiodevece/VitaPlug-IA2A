@@ -2,15 +2,17 @@
 #include "analysis/Features.h"
 #include "calibration/Calibrator.h"
 #include "ui/Editor.h"
+#include "assist/TrackSource.h"
 #include <algorithm>
 #include <cmath>
 
 namespace ia2a {
-Processor::Processor():AudioProcessor(BusesProperties()
+Processor::Processor(bool useDemo):AudioProcessor(BusesProperties()
     .withInput("Pista",juce::AudioChannelSet::stereo(),true)
     .withOutput("Salida",juce::AudioChannelSet::stereo(),true)
     .withInput("Referencia",juce::AudioChannelSet::stereo(),false)),
-    provider(juce::SystemStats::getEnvironmentVariable("IA2A_TURN_URL","").isEmpty()?"local-demo":"http"),
+    provider(useDemo?"local-demo":juce::SystemStats::getEnvironmentVariable("IA2A_TURN_URL","").isEmpty()?"disconnected":"http"),
+    demoMode(useDemo),
     worker([this]{runWorker();}) {}
 Processor::~Processor() {
     { std::lock_guard lock(control); closing=true; cancellation.request_stop(); }
@@ -23,8 +25,13 @@ bool Processor::isBusesLayoutSupported(const BusesLayout& l) const {
     auto aux=l.getChannelSet(true,1);
     return aux.isDisabled()||aux==juce::AudioChannelSet::mono()||aux==juce::AudioChannelSet::stereo();
 }
-void Processor::invalidateLocked() {
-    cancellation.request_stop(); job.reset(); clip.reset(); previousGoal=juce::var{}; history.clear();
+void Processor::invalidateLocked(bool resetConversation) {
+    cancellation.request_stop(); job.reset(); clip.reset(); previousResult=juce::var{};
+    if(resetConversation) {
+        previousGoal=juce::var{};
+        lastAction.clear();
+        history.clear();
+    }
     busy=pendingSend=needsClarification=false; session.invalidate(); compare.publish(session.monitor());
     knownRevision=capture.revision(); monitorRevision.store(knownRevision);
 }
@@ -86,10 +93,24 @@ void Processor::captureAudio() {
         capture.invalidate();invalidateLocked();message="Captura cancelada.";
     } else armLocked();
 }
+void Processor::updateTrackProperties(const TrackProperties& properties) {
+    const auto name = properties.name.value_or(juce::String{}).trim();
+    const auto detected = inferTrackSource(name);
+    std::lock_guard lock(control);
+    trackName = name;
+    if(inferredSource==detected) return;
+    inferredSource=detected;
+    if(source=="auto") {
+        capture.invalidate();
+        invalidateLocked(true);
+        prompt.clear();
+        message=juce::String::fromUTF8("Fuente actualizada. Pulsa Escuchar para capturar la pista.");
+    }
+}
 void Processor::setSource(juce::String value) {
-    if(value!="voice"&&value!="drums"&&value!="other")return;
+    if(!isTrackSourceSelection(value))return;
     std::lock_guard lock(control);if(source==value)return;
-    source=value;capture.invalidate();invalidateLocked();prompt.clear();
+    source=value;capture.invalidate();invalidateLocked(true);prompt.clear();
     message="Pulsa Escuchar para capturar la nueva fuente.";
 }
 void Processor::setReference(bool value) {
@@ -100,8 +121,13 @@ void Processor::setReference(bool value) {
 void Processor::queueLocked() {
     cancellation.request_stop();cancellation=std::stop_source{};
     Job j; j.ticket=session.begin();j.clip=clip;j.seed=session.seed();j.applied=session.applied();
-    j.turn.requestId=juce::Uuid().toString();j.turn.source=source;j.turn.prompt=prompt;
+    j.turn.requestId=juce::Uuid().toString();
+    j.turn.source=source=="auto"?inferredSource:source;
+    j.turn.sourceOrigin=source!="auto"?"user":inferredSource!="other"?"host-name":"unknown";
+    j.turn.prompt=prompt;
     j.turn.channels=int(clip->track.size());j.turn.history=history;j.turn.previousGoal=previousGoal;
+    j.turn.previousResult=previousResult;
+    j.turn.lastAction=lastAction;
     j.turn.hasApplied=j.applied.enabled;j.turn.hasPending=session.pending();j.stop=cancellation.get_token();
     j.turn.appliedSettings=turnSettings(j.applied,j.turn.channels);
     if(j.turn.hasPending)j.turn.pendingSettings=turnSettings(j.seed,j.turn.channels);
@@ -116,7 +142,7 @@ void Processor::submit(juce::String text) {
     } else queueLocked();
 }
 void Processor::runWorker() {
-    Client client;
+    Client client(demoMode);
     std::uint64_t observedRevision=0;
     float lastProgress=-1;
     auto lastBlock=std::chrono::steady_clock::now();
@@ -170,12 +196,25 @@ void Processor::runWorker() {
         if(reference&&j.clip->reference.empty())explanation+=juce::String::fromUTF8(" · Sin entrada de referencia. Análisis de la pista sola.");
         if(reply.kind==ClientReply::Kind::goal && calibration.outcome==Outcome::Candidate) {
             session.offer(j.ticket,calibration.settings,calibration.matchGainDb);
+            lastAction.clear();
             auto monitor=session.monitor();session.listen(monitor.preview,matched);
-            previousGoal=reply.wireGoal;
         } else session.finish(j.ticket);
+        if(reply.kind==ClientReply::Kind::goal) {
+            previousGoal=reply.wireGoal;
+            previousResult=turnResult(calibration);
+        }
         if(usable && (reply.kind==ClientReply::Kind::goal||reply.kind==ClientReply::Kind::question||reply.kind==ClientReply::Kind::keep)){
-            history.add(j.turn.prompt.substring(0,220));history.add(explanation.substring(0,220));
-            while(history.size()>4)history.remove(0);
+            history.add(j.turn.prompt.substring(0,400));
+            history.add(explanation.substring(0,400));
+            auto historyBytes = [&] {
+                size_t bytes=0;
+                for(const auto& line:history) bytes+=line.getNumBytesAsUTF8();
+                return bytes;
+            };
+            while(history.size()>12 || historyBytes()>6000) {
+                history.remove(0);
+                history.remove(0);
+            }
         }
         needsClarification=reply.kind==ClientReply::Kind::question ||
             (reply.kind==ClientReply::Kind::goal && calibration.outcome==Outcome::Clarify);
@@ -187,19 +226,19 @@ void Processor::listen(bool preview,bool levelMatched) {
 }
 void Processor::apply() {
     std::lock_guard lock(control);
-    if(session.apply()) {needsClarification=false;previousGoal=juce::var{};history.clear();message="Ajuste aplicado.";compare.publish(session.monitor());}
+    if(session.apply()) {needsClarification=false;lastAction="applied";message="Ajuste aplicado.";compare.publish(session.monitor());}
 }
 void Processor::discard() {
     std::lock_guard lock(control);cancellation.request_stop();job.reset();busy=false;pendingSend=false;
-    session.discard();needsClarification=false;previousGoal=juce::var{};history.clear();message="Propuesta descartada.";compare.publish(session.monitor());
+    session.discard();needsClarification=false;lastAction="discarded";message="Propuesta descartada.";compare.publish(session.monitor());
 }
 void Processor::undo() {
     std::lock_guard lock(control);if(session.undo()){cancellation.request_stop();job.reset();busy=needsClarification=false;
-        previousGoal=juce::var{};history.clear();message="Has recuperado el ajuste anterior.";compare.publish(session.monitor());}
+        lastAction="undone";message="Has recuperado el ajuste anterior.";compare.publish(session.monitor());}
 }
 Snapshot Processor::snapshot() const {
     std::lock_guard lock(control);Snapshot s;
-    s.source=source;s.prompt=prompt;s.message=message;s.provider=provider;s.reference=reference;
+    s.source=source;s.effectiveSource=source=="auto"?inferredSource:source;s.trackName=trackName;s.prompt=prompt;s.message=message;s.provider=provider;s.reference=reference;
     s.auxActive=auxActive;s.recording=capture.status()==Capture::Armed||capture.status()==Capture::Recording;
     s.progress=capture.progress();s.busy=busy;s.pending=session.pending();s.canApply=session.canApply();
     s.needsClarification=needsClarification;

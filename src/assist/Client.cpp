@@ -1,5 +1,7 @@
 #include "Client.h"
+#include "Connection.h"
 #include "analysis/Features.h"
+#include "calibration/Calibrator.h"
 #include "dsp/Settings.h"
 #include "ia2a_turn_data.h"
 #include <algorithm>
@@ -26,6 +28,9 @@ var encode(const Turn& t) {
     put(out,"history",history); put(out,"features",t.features); put(out,"previousGoal",t.previousGoal);
     if(!t.appliedSettings.isVoid())put(out,"appliedSettings",t.appliedSettings);
     if(!t.pendingSettings.isVoid())put(out,"pendingSettings",t.pendingSettings);
+    if(!t.previousResult.isVoid())put(out,"previousResult",t.previousResult);
+    if(t.sourceOrigin.isNotEmpty())put(out,"sourceOrigin",t.sourceOrigin);
+    if(t.lastAction.isNotEmpty())put(out,"lastAction",t.lastAction);
     put(out,"hasApplied",t.hasApplied); put(out,"hasPending",t.hasPending);
     return out;
 }
@@ -79,15 +84,16 @@ bool matches(const var& rule, const var& value) {
     return false;
 }
 
-std::optional<Goal> decodeGoal(const var& wire,const Turn& t) {
+std::optional<Goal> decodeGoal(const var& wire,const String& source,int channels) {
     if (!matches(definitions()["goal"],wire)) return {};
     Goal goal;
-    goal.source=t.source=="voice"?Source::Voice:t.source=="drums"?Source::DrumBus:Source::Other;
+    goal.source=source=="voice"?Source::Voice:source=="drums"?Source::DrumBus:Source::Other;
     goal.allowMS=static_cast<bool>(wire["allowMS"]); goal.allowLR=static_cast<bool>(wire["allowLR"]);
-    if ((!goal.allowMS && !goal.allowLR) || (goal.allowMS && t.channels==1)) return {};
+    if ((!goal.allowMS && !goal.allowLR) || (goal.allowMS && channels==1)) return {};
     static constexpr std::pair<const char*,Objective> vocabulary[]={
         {"stabilise",Objective::Stabilise},{"bringForward",Objective::BringForward},{"air",Objective::Air},
-        {"preserveAttack",Objective::PreserveAttack},{"releaseTails",Objective::ReleaseTails}};
+        {"preserveAttack",Objective::PreserveAttack},{"releaseTails",Objective::ReleaseTails},
+        {"reduceAttack",Objective::ReduceAttack},{"easeCompression",Objective::EaseCompression}};
     for (const auto& p : *wire["priorities"].getArray()) {
         const auto name=p["objective"].toString();
         const auto match=std::find_if(std::begin(vocabulary),std::end(vocabulary),[&](auto entry){return name==entry.first;});
@@ -170,27 +176,67 @@ juce::var turnFeatures(const Features& f) {
     put(out,"crestDb",f.crestDb); put(out,"attackDb",f.attackDb); put(out,"decayDb",f.decayDb);
     put(out,"highRatioDb",f.highRatioDb); put(out,"midHighEnergy",f.midHighEnergy); put(out,"sideHighEnergy",f.sideHighEnergy);
     put(out,"referenceContrastDb",f.referenceContrastDb); put(out,"referenceOverlap",f.referenceOverlap); put(out,"monoFoldDb",f.monoFoldDb);
+    put(out,"highSpreadDb",f.highSpreadDb); put(out,"midEnergy",f.midEnergy); put(out,"sideEnergy",f.sideEnergy);
+    put(out,"sideTailRatioDb",f.sideTailRatioDb); put(out,"highPulseCorrelation",std::clamp(f.highPulseCorrelation,-1.f,1.f));
+    put(out,"clippedFraction",f.clippedFraction); put(out,"monitorDb",f.monitorDb);
+    put(out,"activeWindows",f.activeWindows); put(out,"phraseWindows",f.phraseWindows);
     return out;
 }
 
-Client::Client(): Client(juce::SystemStats::getEnvironmentVariable("IA2A_TURN_URL",""),
-                        juce::SystemStats::getEnvironmentVariable("IA2A_SERVICE_TOKEN","")) {}
+juce::var turnResult(const Calibration& calibration) {
+    auto out=object();
+    const auto outcome=calibration.outcome;
+    put(out,"outcome",outcome==Outcome::Candidate?"candidate":outcome==Outcome::Keep?"keep":
+                     outcome==Outcome::Clarify?"clarify":"cancelled");
+    if(calibration.before.usable)put(out,"before",turnFeatures(calibration.before));
+    if(calibration.after.usable)put(out,"after",turnFeatures(calibration.after));
+    put(out,"midReductionDb",calibration.midReductionDb);
+    put(out,"sideReductionDb",calibration.sideReductionDb);
+    return out;
+}
+
+Client::Client(bool demoMode) {
+    if(demoMode) return;
+    url=juce::SystemStats::getEnvironmentVariable("IA2A_TURN_URL","");
+    bearer=juce::SystemStats::getEnvironmentVariable("IA2A_SERVICE_TOKEN","");
+    usePublishedConnection=url.isEmpty();
+}
 Client::Client(String endpoint,String token):url(std::move(endpoint)),bearer(std::move(token)) {}
 
 ClientReply Client::request(const Turn& t,std::stop_token stop) const {
     if(stop.stop_requested())return failure(t,true);
     const auto wire=encode(t);
-    if(!matches(definitions()["request"],wire) || (!t.previousGoal.isVoid() && !decodeGoal(t.previousGoal,t)))return failure(t);
+    if(!matches(definitions()["request"],wire) || (!t.previousGoal.isVoid() && !decodeGoal(t.previousGoal,t.source,2)))return failure(t);
     auto body=juce::JSON::toString(wire,true);
     if(body.getNumBytesAsUTF8()>16384)return failure(t);
-    auto reply=url.isEmpty()?demoResponse(t):post(url,bearer,body,stop);
+    auto endpoint=url;
+    auto token=bearer;
+    if(usePublishedConnection) {
+        const auto local=publishedConnection();
+        if(!local) {
+            auto result=failure(t);
+            result.provider="disconnected";
+            result.text=String::fromUTF8("Abre el iniciador de Claude y vuelve a enviar tu petición. El fragmento está listo.");
+            return result;
+        }
+        endpoint=local->turnUrl;
+        token=local->token;
+    }
+    auto reply=endpoint.isEmpty()?demoResponse(t):post(endpoint,token,body,stop);
     if(stop.stop_requested())return failure(t,true);
-    if(!matches(definitions()["response"],reply) || reply["requestId"].toString()!=t.requestId)return failure(t);
+    if(!matches(definitions()["response"],reply) || reply["requestId"].toString()!=t.requestId) {
+        auto result=failure(t);
+        if(usePublishedConnection) {
+            result.provider="disconnected";
+            result.text=String::fromUTF8("El servicio no pudo completar la consulta. Comprueba la ventana de Terminal y vuelve a enviar.");
+        }
+        return result;
+    }
     ClientReply out;
     out.requestId=t.requestId; out.provider=reply["provider"].toString(); out.text=reply["text"].toString();
     const auto kind=reply["kind"].toString();
     if(kind=="goal") {
-        auto goal=decodeGoal(reply["goal"],t);
+        auto goal=decodeGoal(reply["goal"],t.source,t.channels);
         if(!goal)return failure(t);
         out.kind=ClientReply::Kind::goal; out.goal=std::move(*goal);out.wireGoal=reply["goal"];
     } else out.kind=kind=="keep"?ClientReply::Kind::keep:ClientReply::Kind::question;

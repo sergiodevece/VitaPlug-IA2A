@@ -11,16 +11,18 @@
 
 namespace ia2a {
 
+struct Calibration;
 struct Features;
 struct Settings;
 juce::var turnSettings(const Settings&,int channels);
 juce::var turnFeatures(const Features&);
+juce::var turnResult(const Calibration&);
 
 struct Turn {
-    juce::String requestId, source, prompt;
+    juce::String requestId, source, prompt, sourceOrigin, lastAction;
     int channels = 1;
     juce::StringArray history;
-    juce::var features {new juce::DynamicObject}, previousGoal, appliedSettings, pendingSettings;
+    juce::var features {new juce::DynamicObject}, previousGoal, appliedSettings, pendingSettings, previousResult;
     bool hasApplied = false, hasPending = false;
 };
 
@@ -35,7 +37,7 @@ struct ClientReply {
 class Client {
 public:
     using Completion = std::function<void(ClientReply)>;
-    Client();
+    explicit Client(bool demoMode = false);
     Client(juce::String endpoint, juce::String token);
     ~Client();
 
@@ -54,6 +56,7 @@ private:
     std::optional<Job> queued;
     std::stop_source active;
     bool closing = false;
+    bool usePublishedConnection = false;
     std::thread worker;
 };
 

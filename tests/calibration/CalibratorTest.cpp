@@ -18,6 +18,40 @@ int main() {
     auto kit=calibrate(fixtures::drums(true),start,start,drums);
     std::cout<<"Batería: "<<kit.explanation<<" GR "<<kit.midReductionDb<<" / "<<kit.sideReductionDb<<"\n";
     check(kit.triedLR && kit.triedMS && kit.outcome==Outcome::Candidate && kit.settings.midSide && kit.midReductionDb>kit.sideReductionDb,"centre and sides");
+    const auto drumsClip=fixtures::drums(true);
+    auto spiky=fixtures::voice(.15f,.15f);
+    for(size_t n=0;n<spiky.track[0].size();++n) {
+        const double seconds=n/spiky.sampleRate;
+        const double hit=std::fmod(seconds,.3);
+        const double envelope=hit<.04?std::pow(std::sin(fixtures::tau*hit/.08),2):0;
+        spiky.track[0][n]+=.62f*envelope*std::sin(fixtures::tau*290*seconds);
+    }
+    Goal tameAttack{Source::Other,{{Objective::ReduceAttack,.85f}},true,false};
+    const auto softened=calibrate(spiky,start,start,tameAttack);
+    check(softened.outcome==Outcome::Candidate,"transient request creates a candidate");
+    check(softened.after.crestDb<softened.before.crestDb-.65f,"compression tames peak prominence");
+    check(softened.after.peakDb<=-1,"transient candidate stays within headroom");
+    std::cout<<"Ataques: cresta "<<softened.before.crestDb<<" -> "<<softened.after.crestDb<<" dB\n";
+
+    auto coloredKit=kit.settings;
+    coloredKit.mid.airDb=.7f;
+    coloredKit.side.airDb=.3f;
+    coloredKit.outputGainDb=-1.f;
+    Goal ease{Source::DrumBus,{{Objective::EaseCompression,.5f}}};
+    const auto relaxed=calibrate(drumsClip,start,coloredKit,ease);
+    check(relaxed.outcome==Outcome::Candidate,"refinement acts on unconfirmed candidate");
+    check(relaxed.midReductionDb<kit.midReductionDb-.5f,"refinement eases measured gain reduction");
+    check(relaxed.settings.midSide==coloredKit.midSide && !relaxed.triedLR,"ease keeps stereo routing");
+    check(relaxed.settings.mid.airDb==coloredKit.mid.airDb && relaxed.settings.side.airDb==coloredKit.side.airDb &&
+          relaxed.settings.outputGainDb==coloredKit.outputGainDb &&
+          relaxed.settings.mid.attackMs==coloredKit.mid.attackMs &&
+          relaxed.settings.mid.fastReleaseMs==coloredKit.mid.fastReleaseMs,
+          "ease keeps tone, output and timing");
+    const auto easedApplied=calibrate(drumsClip,coloredKit,coloredKit,ease);
+    check(easedApplied.outcome==Outcome::Candidate && easedApplied.settings==relaxed.settings,
+          "ease also refines the confirmed setting");
+    check(calibrate(drumsClip,start,start,ease).outcome==Outcome::Keep,"ease keeps a dry signal dry");
+    std::cout<<"Refinamiento: reducción Mid "<<kit.midReductionDb<<" -> "<<relaxed.midReductionDb<<" dB\n";
     auto centred=calibrate(fixtures::drums(false),start,start,drums);
     check(centred.outcome!=Outcome::Candidate || !centred.settings.midSide,"centred cymbal");
     auto balanced=calibrate(fixtures::voice(.25f,.25f),start,start,Goal{Source::Voice,{{Objective::Stabilise,.8f}}});

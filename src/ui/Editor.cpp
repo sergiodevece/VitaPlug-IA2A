@@ -1,5 +1,6 @@
 #include "ui/Editor.h"
 #include "audio/PluginProcessor.h"
+#include "assist/TrackSource.h"
 #include <BinaryData.h>
 #include <cmath>
 
@@ -75,7 +76,9 @@ Editor::Editor(Processor& proc) : AudioProcessorEditor(proc), processor(proc) {
         b.setColour(juce::TextButton::textColourOnId,green);
     };
     add(source,"source","Fuente");
-    source.addItem("Voz",1); source.addItem(juce::String::fromUTF8("Bus de batería"),2); source.addItem("Otra fuente",3);
+    int sourceItem = 1;
+    for (const auto& option : trackSourceOptions())
+        source.addItem(juce::String::fromUTF8(option.label), sourceItem++);
     button(reference,"reference","Referencia de mezcla");
     button(capture,"capture","Escuchar"); add(prompt,"prompt",juce::String::fromUTF8("Petición al asistente"));
     prompt.setMultiLine(false); prompt.setInputRestrictions(500);
@@ -97,7 +100,13 @@ Editor::Editor(Processor& proc) : AudioProcessorEditor(proc), processor(proc) {
     designerCredit.setText("designed by SerxDev",juce::dontSendNotification);
     designerCredit.setFont(font(16,look.face));
     designerCredit.setJustificationType(juce::Justification::centredRight);
-    source.onChange=[this] { processor.setSource(source.getSelectedId()==1?"voice":source.getSelectedId()==2?"drums":"other"); refresh(); };
+    source.onChange = [this] {
+        const int selected = source.getSelectedId() - 1;
+        const auto options = trackSourceOptions();
+        if (selected >= 0 && static_cast<std::size_t>(selected) < options.size())
+            processor.setSource(options[static_cast<std::size_t>(selected)].id);
+        refresh();
+    };
     reference.onClick=[this] { processor.setReference(!processor.snapshot().reference); refresh(); };
     capture.onClick=[this] { processor.captureAudio(); refresh(); };
     prompt.onReturnKey=[this] { submitPrompt(); }; send.onClick=[this] { submitPrompt(); };
@@ -127,7 +136,17 @@ void Editor::submitPrompt() {
 void Editor::timerCallback() { refresh(); }
 void Editor::refresh() {
     const auto s=processor.snapshot();
-    source.setSelectedId(s.source=="voice"?1:s.source=="drums"?2:3,juce::dontSendNotification);
+    int sourceItem = 1;
+    for (const auto& option : trackSourceOptions()) {
+        if (s.source == option.id) {
+            source.setSelectedId(sourceItem, juce::dontSendNotification);
+            break;
+        }
+        ++sourceItem;
+    }
+    juce::String sourceHelp = trackSourceLabel(s.effectiveSource);
+    if (s.trackName.isNotEmpty()) sourceHelp = s.trackName + juce::String::fromUTF8(" · ") + sourceHelp;
+    source.setTooltip(sourceHelp);
     reference.setToggleState(s.reference,juce::dontSendNotification);
     reference.setButtonText(juce::String::fromUTF8(s.reference?(s.auxActive?"Ref. mezcla activa":"Ref. sin señal"):"Ref. mezcla inactiva"));
     level.setSelectedId(s.matched?1:2,juce::dontSendNotification);
@@ -168,7 +187,7 @@ void Editor::renderPlate() {
 
 void Editor::resized() {
     renderPlate();
-    source.setBounds(675,42,120,31); reference.setBounds(805,42,144,31);
+    source.setBounds(657,42,138,31); reference.setBounds(805,42,144,31);
     request.setBounds(74,151,642,32); status.setBounds(74,187,642,33); response.setBounds(74,224,644,68);
     capture.setBounds(67,331,83,37); prompt.setBounds(158,331,689,37); send.setBounds(855,331,78,37);
     before.setBounds(67,379,62,36); after.setBounds(134,379,77,36); level.setBounds(219,379,123,36);
@@ -184,13 +203,17 @@ void Editor::paint(juce::Graphics& g) {
     text(g,"2A",{91,22,78,46},brand,amber);
     text(g,"VitaPlug",{165,30,96,20},font(16,look.face),cream);
     text(g,"O P T I C A L   C O M P R E S S O R",{165,52,208,13},font(11,look.face),cream);
-    const auto providerText=s.provider=="local-demo"?juce::String::fromUTF8("Intérprete local de prueba"):s.provider=="http"?juce::String("Servicio configurado"):s.provider=="claude"?juce::String("Claude conectado"):s.provider;
+    const auto providerText = s.provider == "local-demo" ? juce::String::fromUTF8("Intérprete local de prueba")
+        : s.provider == "http" ? "Servicio configurado" : s.provider == "claude" ? "Claude conectado"
+        : s.provider.isEmpty() || s.provider == "disconnected" ? "Claude sin conectar" : s.provider;
     text(g,providerText,{204,439,390,32},font(15,look.face),cream);
-    text(g,"FUENTE",{618,42,52,31},font(15,look.face),cream);
+    text(g,"FUENTE",{600,42,52,31},font(15,look.face),cream);
     inset(g,screen,Colour(0xff14291e),Colour(0xff07130f));
     inset(g,bay,Colour(0xff202b22),Colour(0xff101911));
     inset(g,console,Colour(0xff2a302a),Colour(0xff151d16));
-    const auto sourceLabel=s.source=="voice"?"VOZ":s.source=="drums"?juce::String::fromUTF8("BUS DE BATERÍA"):juce::String("OTRA FUENTE");
+    auto sourceLabel = trackSourceLabel(s.effectiveSource).toUpperCase();
+    if (s.source == "auto")
+        sourceLabel += juce::String::fromUTF8(" · AUTO");
     text(g,juce::String::fromUTF8("CONVERSACIÓN · ")+sourceLabel,{74,107,363,25},font(15,look.face),phosphor);
     auto tag=s.recording?juce::String(juce::roundToInt(s.progress*100))+" %":s.busy?"CALCULANDO":s.pending?"PROPUESTA":s.canUndo?"APLICADO":"";
     text(g,tag,{516,107,200,25},font(15,look.face),amber,juce::Justification::centredRight);

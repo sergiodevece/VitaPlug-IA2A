@@ -4,11 +4,11 @@ Prototipo de compresor óptico conversacional para macOS. El frontal A reúne la
 
 ## Escuchar en Logic
 
-1. Insertar IA2A desde **Audio Units → VitaPlug → IA2A**. Seleccionar la fuente y reproducir un pasaje representativo.
+1. Insertar IA2A desde **Audio Units → VitaPlug → IA2A**. Dejar **Fuente** en **Automática** o elegir el material. El modo automático usa el nombre de pista que facilita Logic como indicio. Reproducir un pasaje representativo.
 2. Pulsar **Escuchar** y describir el cambio. También se puede escribir primero y pulsar **Enviar** para armar la captura. Para usar una referencia, seleccionar el acompañamiento en **Cadena lateral**, activar **Referencia de mezcla** y capturar de nuevo.
 3. Alternar **Antes** y **Después**, primero a volumen igualado y luego a nivel final. Escribir otra petición para refinar. **Aplicar** guarda el ajuste a nivel final. **Deshacer** recupera el anterior.
 
-La configuración inicial utiliza un intérprete local de prueba con un repertorio limitado en español. El calibrador prueba ajustes con el DSP óptico sobre el audio real. Para trabajar con un modelo externo o local mediante HTTP, consultar el [servicio de conversación](service/README.md).
+Conectar [el servicio de conversación](service/README.md) para interpretar peticiones libres. El modelo recibe un resumen de la pista con nivel, transitorios, colas y balance estéreo. Si identificar la fuente cambiaría la propuesta, puede preguntarlo. Las respuestas y peticiones sucesivas conservan el contexto reciente mientras el calibrador prueba los ajustes con el DSP óptico sobre el audio real.
 
 ## Compilar y probar
 

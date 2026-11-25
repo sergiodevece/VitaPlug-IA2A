@@ -4,7 +4,7 @@ file(READ "${CMAKE_CURRENT_SOURCE_DIR}/contract/turn.schema.json" IA2A_SCHEMA_JS
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/contract/demo.es.json" IA2A_DEMO_JSON)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/contract/turn_data.h.in"
     "${CMAKE_CURRENT_BINARY_DIR}/generated/ia2a_turn_data.h" @ONLY)
-add_library(ia2a_client STATIC src/assist/Client.cpp)
+add_library(ia2a_client STATIC src/assist/Client.cpp src/assist/Connection.cpp)
 target_include_directories(ia2a_client PUBLIC src PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_compile_definitions(ia2a_client PUBLIC JUCE_USE_CURL=0 JUCE_WEB_BROWSER=0)
 target_link_libraries(ia2a_client PUBLIC juce::juce_core)

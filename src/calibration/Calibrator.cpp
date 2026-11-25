@@ -46,6 +46,9 @@ std::optional<Trial> render(const Clip& input, const Settings& settings, std::st
 float improvement(float change,float target,float scale) {
     return (std::abs(target)-std::abs(target-change))/scale;
 }
+float peakReduction(const Trial& trial) {
+    return std::max(trial.midGr,trial.sideGr);
+}
 float evaluate(const Trial& trial,const Trial& seed,const Features& input,const Goal& goal) {
     const auto& f=trial.audio;
     const auto& base=seed.audio;
@@ -90,6 +93,19 @@ float evaluate(const Trial& trial,const Trial& seed,const Features& input,const 
             case Objective::PreserveAttack:
                 contribution=-amount*(std::max(0.f,base.attackDb-f.attackDb-std::max(.4f,.12f*base.attackDb))/1.5f+std::max(0.f,base.crestDb-f.crestDb-2.f)*.4f);
                 break;
+            case Objective::ReduceAttack: {
+                const float crestChange=base.crestDb-f.crestDb;
+                const float attackChange=base.attackDb-f.attackDb;
+                contribution=.65f*improvement(crestChange,4.f*amount,2.f)
+                             +.35f*improvement(attackChange,2.f*amount,1.5f);
+                break;
+            }
+            case Objective::EaseCompression: {
+                const float priorReduction=peakReduction(seed);
+                const float target=priorReduction*amount;
+                contribution=improvement(priorReduction-peakReduction(trial),target,2.f);
+                break;
+            }
         }
         score+=weight*contribution;
         weight*=.78f;
@@ -101,6 +117,7 @@ Settings makeTrial(const Trial& seed,const Features& input,const Goal& goal,bool
     auto& mid=next.mid;
     const float stable=intensity(goal,Objective::Stabilise),tails=intensity(goal,Objective::ReleaseTails);
     const float air=intensity(goal,Objective::Air),forward=intensity(goal,Objective::BringForward);
+    const float tame=intensity(goal,Objective::ReduceAttack),ease=intensity(goal,Objective::EaseCompression);
     next.enabled=true; next.midSide=ms;
     if(!seed.settings.enabled) { mid.ratio=1; next.side.ratio=1; }
     if(stable>0 || tails>0) {
@@ -119,6 +136,25 @@ Settings makeTrial(const Trial& seed,const Features& input,const Goal& goal,bool
             next.side.airDb=seed.settings.side.airDb;
             next.side.makeupDb=seed.settings.side.makeupDb;
         }
+    }
+    if(tame>0) {
+        const float drive=tame*strength;
+        mid.thresholdDb=std::clamp(input.rmsDb+.38f*input.crestDb-7.f*drive,-60.f,0.f);
+        mid.ratio=1.5f+6.f*drive;
+        mid.attackMs=variant?2.4f:.15f;
+        mid.fastReleaseMs=variant?80.f:35.f;
+        mid.slowReleaseMs=variant?380.f:150.f;
+        mid.memory=.18f;
+        mid.kneeDb=3.f;
+    }
+    if(ease>0 && seed.settings.enabled) {
+        const auto soften=[=](DomainSettings& domain) {
+            const float amount=ease*strength;
+            domain.ratio=1.f+(domain.ratio-1.f)*(1.f-amount);
+            if(variant) domain.thresholdDb=std::min(0.f,domain.thresholdDb+8.f*amount);
+        };
+        soften(mid);
+        if(ms) soften(next.side);
     }
     if(air!=0 && (air<0 || input.highRatioDb<tuning::brightRatioDb))
         mid.airDb=std::clamp(seed.settings.mid.airDb+3*air*strength,0.f,10.f);
@@ -151,8 +187,13 @@ Calibration calibrate(const Clip& clip,const Settings& applied,const Settings& s
     result.explanation="El ajuste actual ya se acerca al resultado pedido.";
     if(goal.priorities.empty()) return result;
     const bool tails=intensity(goal,Objective::ReleaseTails)>0;
+    const bool tame=intensity(goal,Objective::ReduceAttack)>0;
+    const bool ease=intensity(goal,Objective::EaseCompression)>0;
+    const bool keepMode=ease && !tails && !tame && intensity(goal,Objective::Stabilise)==0;
+    const bool seedMode=clip.track.size()==2 && seed.midSide;
     float best=tuning::minimumScore;
     for(bool ms:{false,true}) {
+        if(keepMode && ms!=seedMode) continue;
         if((ms && (!goal.allowMS || clip.track.size()!=2)) || (!ms && !goal.allowLR)) continue;
         if(ms) result.triedMS=true; else result.triedLR=true;
         for(float strength:{.45f,.78f,1.f}) for(int variant:{0,1}) {
@@ -170,12 +211,22 @@ Calibration calibrate(const Clip& clip,const Settings& applied,const Settings& s
     if(stop.stop_requested()) return cancel();
     if(result.outcome==Outcome::Candidate) {
         if(tails && result.settings.midSide) result.explanation="La compresión sujeta más el centro que los lados. Escucha la cola del plato después del golpe.";
+        else if(ease && peakReduction(*initial)>std::max(result.midReductionDb,result.sideReductionDb)+.15f)
+            result.explanation="He suavizado la compresión del ajuste anterior. Compara cómo se mueven los golpes y sus colas.";
+        else if(tame && result.after.crestDb+.25f<initial->audio.crestDb)
+            result.explanation="Los picos destacan menos sobre el cuerpo de la señal. Compara el inicio de los golpes a volumen igualado.";
+        else if(tame && result.after.attackDb+.25f<initial->audio.attackDb)
+            result.explanation="La subida de nivel es más suave en los ataques. Compara los golpes a volumen igualado.";
         else if(intensity(goal,Objective::Air)<0) result.explanation="He reducido el AIR de la propuesta anterior. Compara el brillo de las consonantes.";
         else if(result.after.phraseSpreadDb+.5f<result.before.phraseSpreadDb) result.explanation="Las frases suaves quedan más cerca de las fuertes. Compara si la voz conserva expresión en la mezcla.";
         else result.explanation="Escucha la propuesta primero a volumen igualado y después a su nivel final.";
+    } else if(ease && peakReduction(*initial)<.15f) {
+        result.explanation="En este fragmento el ajuste anterior apenas reduce ganancia.";
     } else if(tails) {
         result.outcome=Outcome::Clarify;
-        result.explanation="¿Te molesta el brillo del plato o que suba y baje con cada golpe?";
+        result.explanation=goal.source==Source::DrumBus
+            ?"¿Te molesta el brillo del plato o que suba y baje con cada golpe?"
+            :"¿Quieres oír más la cola o evitar que cambie de nivel con el ataque?";
     }
     return result;
 }

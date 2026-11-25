@@ -1,8 +1,16 @@
 #include "PluginProcessor.h"
 
+#include <algorithm>
+#include <array>
+
 namespace ia2a {
 namespace {
-constexpr int signature=0x49413241, version=1;
+constexpr int signature = 0x49413241, version = 2;
+// Keep the first three codes compatible with version 1. UI ordering is independent.
+constexpr std::array<const char*, 14> storedSources{
+    "voice", "drums", "other", "auto", "kick", "snare", "percussion",
+    "bass", "guitar", "keys", "synth", "strings", "brass", "mix"
+};
 void writeDomain(juce::MemoryOutputStream& out,const DomainSettings& d) {
     for(float value:{d.thresholdDb,d.ratio,d.attackMs,d.fastReleaseMs,d.slowReleaseMs,
                      d.memory,d.kneeDb,d.hpfHz,d.airDb,d.makeupDb}) out.writeFloat(value);
@@ -20,7 +28,11 @@ void Processor::getStateInformation(juce::MemoryBlock& data) {
     std::lock_guard lock(control);
     auto saved=session.applied();
     juce::MemoryOutputStream out(data,false);
-    out.writeInt(signature);out.writeInt(version);out.writeByte(source=="voice"?0:source=="drums"?1:2);
+    const auto selection = std::find_if(storedSources.begin(), storedSources.end(),
+                                        [&](const char* id) { return source == id; });
+    out.writeInt(signature);
+    out.writeInt(version);
+    out.writeByte(selection == storedSources.end() ? 2 : static_cast<char>(selection - storedSources.begin()));
     out.writeBool(reference);out.writeBool(saved.enabled);out.writeBool(saved.midSide);
     out.writeFloat(saved.inputTrimDb);out.writeFloat(saved.outputGainDb);
     writeDomain(out,saved.mid);writeDomain(out,saved.side);
@@ -29,9 +41,12 @@ void Processor::setStateInformation(const void* bytes,int size) {
     constexpr int serializedSize=2*4+4+2*4+2*(10*4+1);
     if(!bytes||size!=serializedSize)return;
     juce::MemoryInputStream in(bytes,size,false);
-    if(in.readInt()!=signature||in.readInt()!=version)return;
-    const int inputSource=in.readByte();
-    if(inputSource<0||inputSource>2)return;
+    if (in.readInt() != signature) return;
+    const auto storedVersion = in.readInt();
+    if (storedVersion != 1 && storedVersion != version) return;
+    const int inputSource = in.readByte();
+    const int sourceCount = storedVersion == 1 ? 3 : static_cast<int>(storedSources.size());
+    if (inputSource < 0 || inputSource >= sourceCount) return;
     const bool ref=in.readBool();
     Settings saved;
     saved.enabled=in.readBool();saved.midSide=in.readBool();
@@ -39,8 +54,8 @@ void Processor::setStateInformation(const void* bytes,int size) {
     saved.mid=readDomain(in);saved.side=readDomain(in);
     if(!validSettings(saved))return;
     std::lock_guard lock(control);
-    capture.invalidate();invalidateLocked();
-    session.restore(saved);source=inputSource==0?"voice":inputSource==1?"drums":"other";
+    capture.invalidate();invalidateLocked(true);
+    session.restore(saved);source=storedSources[static_cast<std::size_t>(inputSource)];
     reference=ref; matched=true;prompt.clear();
     message=juce::String::fromUTF8("Ajuste de la sesión recuperado.");compare.publish(session.monitor());
 }

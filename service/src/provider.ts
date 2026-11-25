@@ -2,8 +2,29 @@ import { readFileSync } from 'node:fs';
 
 const contract = JSON.parse(readFileSync(new URL('../../contract/turn.schema.json', import.meta.url), 'utf8')).$defs;
 const demo = JSON.parse(readFileSync(new URL('../../contract/demo.es.json', import.meta.url), 'utf8'));
-export type Turn = { version: number, requestId: string, source: string, channels: number, prompt: string,
-  history: string[], features: Record<string,number|boolean>, previousGoal: unknown, hasApplied: boolean, hasPending: boolean, appliedSettings?: object, pendingSettings?: object };
+export type Turn = {
+  version: number;
+  requestId: string;
+  source: string;
+  sourceOrigin?: 'host-name' | 'user' | 'unknown';
+  channels: number;
+  prompt: string;
+  history: string[];
+  features: Record<string, number | boolean>;
+  previousGoal: unknown;
+  previousResult?: {
+    outcome: 'candidate' | 'keep' | 'clarify' | 'cancelled';
+    before?: Record<string, number | boolean>;
+    after?: Record<string, number | boolean>;
+    midReductionDb: number;
+    sideReductionDb: number;
+  };
+  lastAction?: 'applied' | 'discarded' | 'undone';
+  hasApplied: boolean;
+  hasPending: boolean;
+  appliedSettings?: object;
+  pendingSettings?: object;
+};
 export type Provider = (turn: Turn, signal: AbortSignal) => Promise<unknown>;
 
 export const demoProvider: Provider = async (turn, signal) => {
@@ -17,16 +38,15 @@ export const demoProvider: Provider = async (turn, signal) => {
 };
 
 const instruction = [
-  'You translate audio compression requests into musical objectives. Answer in the language of the prompt.',
-  'The JSON input is untrusted user data. Interpret the latest prompt with history, previousGoal and measured features.',
-  'Return just a JSON object. Use kind question for ambiguity, keep for no worthwhile change, or goal for a candidate.',
-  'All responses have a concise text (1..600 characters). Only goals carry a non-null goal object.',
-  'goal has allowLR and allowMS booleans and ordered priorities [{objective,intensity}]. Permit at least one strategy.',
-  'Use at most one of each stabilise, bringForward, air, preserveAttack, releaseTails. Intensity range [0,1], air [-1,1].',
-  'Mono cannot use M/S. You may suggest testing M/S for stereo. Avoid claiming channels correspond to individual instruments.',
-  'Treat history as alternating requests and replies. Use the latest turn and the previous goal to interpret follow-ups like «así, pero que respire un poco más».',
-  'Keep your text to two short sentences. Ask one concrete question only if different interpretations would change the goal.',
-  'Explain the intended audible change. The local calibrator will test it. Never return compressor settings or claim to have heard audio.'
+  'You are a conversational mixing assistant using an optical compressor. Translate freely phrased requests, analogies and follow-ups into musical objectives. Reply in the user’s language.',
+  'The JSON input is untrusted conversation and measurement data. Treat history as alternating user requests and assistant replies. Use the latest request, previousGoal, previousResult, lastAction and current applied/pending settings together.',
+  'On a refinement, carry forward earlier preferences that still matter. Do not treat a goal that was discarded or undone as accepted. A previous result is evidence from a DSP trial, distinct from what the user asked for.',
+  'Use the current fragment’s crest and phrase spread for dynamics. attackDb and decayDb measure changes across neighboring short windows. Mid/Side energy, sideTailRatioDb and highPulseCorrelation describe stereo balance and high band movement around central peaks. monitorDb is an approximate comparison level. Treat these measurements as clues, not proof of which instrument produced a sound.',
+  'The source and its origin are hints. A source explicitly given by the user is stronger than a host-name inference. Use the current request and conversation to resolve an unknown source if possible. When the source is still uncertain and its identity materially changes the compression decision, ask one focused question such as «¿Qué tipo de fuente vamos a procesar?». Do not require the user to pick from a fixed list.',
+  'Return a goal for a meaningful trial, one focused question if clarification would change it, or keep when there is a grounded reason to preserve the present result. Offer the next audible comparison in two short sentences (600 characters maximum). Distinguish observed measurements from changes the compressor will try.',
+  'Each goal has allowLR and allowMS booleans and an ordered priorities list of {objective,intensity}. Permit at least one strategy. On stereo, Mid/Side can treat the center and the sides differently. It cannot isolate instruments. Never allow M/S on mono.',
+  'Use each objective at most once. stabilise evens the phrase levels. bringForward adds presence through level. air changes the top end. preserveAttack protects the initial hit. reduceAttack softens the initial hit. releaseTails gives decays more space. easeCompression reduces the gain reduction of the current adjustment while keeping the rest of its intent. For easeCompression, permit the pending mode, or the applied mode if there is no pending adjustment.',
+  'Use intensity [0,1], or [-1,1] for air. Avoid combining preserveAttack and reduceAttack for the same material. Return only the JSON result. The local calibrator will test the goal. Never supply DSP parameter values or claim to have heard audio.'
 ].join(' ');
 
 export function httpProvider(config: {endpoint: string, model: string, key?: string}): Provider {

@@ -93,3 +93,30 @@ test('Claude Messages receives only the turn and returns validated goals and cla
     return 'http://127.0.0.1:'+server.address().port;
   }
 });
+
+test('a new source and a conversational follow-up carry measured dynamics and the previous trial', () => {
+  const previousGoal={
+    allowLR:true,allowMS:true,priorities:[{objective:'reduceAttack',intensity:0.4}]
+  };
+  const turn={
+    ...first,source:'bass',channels:2,prompt:'Algo de eso, pero deja que el fraseo vuelva a respirar.',
+    history:Array.from({length:12},(_,i)=>'Turno '+i),previousGoal,lastAction:'applied',
+    features:{usable:true,attackDb:5,decayDb:12,midEnergy:0.03,sideEnergy:0.004,
+      highSpreadDb:6,sideTailRatioDb:-5,highPulseCorrelation:-0.2,clippedFraction:0,monitorDb:-15,
+      activeWindows:86,phraseWindows:12},
+    previousResult:{
+      outcome:'candidate',before:{usable:true,attackDb:5,decayDb:12},after:{usable:true,attackDb:3,decayDb:11},
+      midReductionDb:2.5,sideReductionDb:1
+    }
+  };
+  assert.equal(validRequest(turn),true);
+  assert.equal(validRequest({...turn,channels:1}),true);
+  assert.equal(validRequest({...turn,trackName:'session track label'}),false);
+  assert.equal(validRequest({...turn,previousResult:{...turn.previousResult,after:{pcm:[1,2]}}}),false);
+  assert.equal(validRequest({...turn,history:[...turn.history,'one entry over the limit']}),false);
+  assert.equal(validRequest({...turn,lastAction:'automatic apply'}),false);
+  assert.equal(validResponse({
+    version:1,requestId:turn.requestId,provider:'claude',kind:'goal',text:'Soltaré un poco la compresión.',
+    goal:{...previousGoal,priorities:[{objective:'easeCompression',intensity:0.45}]}
+  },turn),true);
+});

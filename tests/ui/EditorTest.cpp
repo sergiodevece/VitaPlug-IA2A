@@ -15,7 +15,7 @@ void check(bool condition,const char* reason) { if (!condition) throw std::runti
 int main(int argc,char** argv) {
     juce::ScopedJuceInitialiser_GUI juce;
     try {
-        ia2a::Processor processor;
+        ia2a::Processor processor(true);
         processor.prepareToPlay(32000,256);
         ia2a::Editor editor(processor);
         auto& apply = widget<juce::TextButton>(editor,"apply");
@@ -39,7 +39,7 @@ int main(int argc,char** argv) {
         check(signature.isVisible() && signature.getBounds()==signatureBounds,"Opening the graph moved the designer credit");
         graph.onClick();
         check(editor.getHeight()==height,"The drawer did not close");
-        source.setSelectedId(2,juce::sendNotificationSync);
+        source.setSelectedId(3,juce::sendNotificationSync);
         check(processor.snapshot().source=="drums","Source selection was not applied");
         ref.onClick();
         check(processor.snapshot().reference,"Reference selection was lost");

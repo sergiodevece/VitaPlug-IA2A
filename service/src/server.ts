@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { claudeProvider, demoProvider, httpProvider } from './provider.ts';
 import { createTurnServer } from './turn.ts';
+import { publishLocalConnection } from './connection.ts';
 
 const env=process.env;
 const configured=env.IA2A_PROVIDER || (env.IA2A_MODEL_URL?'http':'local-demo');
@@ -23,28 +24,26 @@ function selectProvider() {
   return demoProvider;
 }
 
-const port=Number(env.IA2A_PORT || 48220);
 const openLogic=process.argv.includes('--open-logic');
-const token=env.IA2A_SERVICE_TOKEN || (openLogic?randomBytes(32).toString('hex'):'');
+const port=Number(env.IA2A_PORT || (openLogic?0:48220));
+const token=openLogic?randomBytes(32).toString('hex'):(env.IA2A_SERVICE_TOKEN||'');
 const server=createTurnServer({token,name:configured,provider:selectProvider()});
 server.listen(port,'127.0.0.1',()=>{
-  const endpoint='http://127.0.0.1:'+server.address().port;
-  console.log('IA2A en '+endpoint+' · '+configured);
+  const localPort=server.address().port;
+  console.log('IA2A en http://127.0.0.1:'+localPort+' · '+configured);
   if(!openLogic) return;
 
-  // Logic receives the local endpoint and its temporary token. The model key stays in this process.
+  const removeConnection=publishLocalConnection(localPort, token);
+  process.once('exit',removeConnection);
+  for (const signal of ['SIGINT','SIGTERM'] as const)
+    process.once(signal,()=>process.exit(0));
+
+  // An Audio Unit can find the running service even if Logic was already open.
   const appEnv={...process.env};
   delete appEnv.ANTHROPIC_API_KEY;
   delete appEnv.IA2A_MODEL_KEY;
-  const open=spawn('/usr/bin/open',[
-    '--env','IA2A_TURN_URL='+endpoint+'/v1/turn',
-    '--env','IA2A_SERVICE_TOKEN='+token,'-b','com.apple.logic10'
-  ],{env:appEnv,stdio:'inherit'});
-  const fail=()=>{
-    console.error('No se pudo abrir Logic Pro.');
-    process.exitCode=1;
-    server.close();
-  };
-  open.once('error',fail);
-  open.once('exit',code=>{if(code!==0)fail();});
+  const open=spawn('/usr/bin/open',['-b','com.apple.logic10'],{env:appEnv,stdio:'inherit'});
+  const report = () => console.error('Abre Logic Pro manualmente. El servicio IA2A está listo.');
+  open.once('error',report);
+  open.once('exit',code=>{if(code!==0)report();});
 });

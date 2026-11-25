@@ -103,7 +103,8 @@ int main(int argc,char** argv) try {
     turn.features=turnFeatures(input);
     if(!input.usable) throw std::runtime_error("Se requiere más señal útil en la captura.");
     const auto begin=std::chrono::steady_clock::now();
-    Client client;
+    const auto endpoint = juce::SystemStats::getEnvironmentVariable("IA2A_TURN_URL","");
+    Client client(endpoint, juce::SystemStats::getEnvironmentVariable("IA2A_SERVICE_TOKEN",""));
     const auto reply=client.request(turn);
     if(reply.kind==ClientReply::Kind::error || reply.kind==ClientReply::Kind::cancelled)
         throw std::runtime_error(reply.text.toStdString());

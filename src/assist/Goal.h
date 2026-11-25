@@ -3,7 +3,7 @@
 
 namespace ia2a {
 enum class Source { Voice, DrumBus, Other };
-enum class Objective { Stabilise, BringForward, Air, PreserveAttack, ReleaseTails };
+enum class Objective { Stabilise, BringForward, Air, PreserveAttack, ReleaseTails, ReduceAttack, EaseCompression };
 struct Priority {
     Objective objective;
     float intensity;

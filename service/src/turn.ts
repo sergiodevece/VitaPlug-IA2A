@@ -31,7 +31,7 @@ function admissible(goal, channels:number) {
     goal.priorities.every(p=>p.objective==='air' || p.intensity>=0);
 }
 export function validRequest(input): input is Turn {
-  return matches(defs.request,input) && (!input.previousGoal || admissible(input.previousGoal,input.channels));
+  return matches(defs.request,input) && (!input.previousGoal || admissible(input.previousGoal,2));
 }
 export function validResponse(reply, turn:Turn) {
   return matches(defs.response,reply) && reply.requestId===turn.requestId &&

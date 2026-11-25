@@ -9,7 +9,7 @@
 
 namespace ia2a {
 struct Snapshot {
-    juce::String source,prompt,message,provider;
+    juce::String source,effectiveSource,trackName,prompt,message,provider;
     bool reference{},auxActive{},recording{},busy{},pending{},canApply{},canUndo{},preview{},matched{},hasClip{},midSide{};
     bool needsClarification{};
     float progress{},inputDb{},outputDb{},reductionDb{};
@@ -18,10 +18,11 @@ struct Snapshot {
 };
 class Processor final : public juce::AudioProcessor {
 public:
-    Processor();
+    explicit Processor(bool demoMode = false);
     ~Processor() override;
     void prepareToPlay(double,int) override;
     void releaseResources() override;
+    void updateTrackProperties(const TrackProperties&) override;
     void processBlock(juce::AudioBuffer<float>&,juce::MidiBuffer&) override;
     bool isBusesLayoutSupported(const BusesLayout&) const override;
     juce::AudioProcessorEditor* createEditor() override;
@@ -45,7 +46,7 @@ public:
     void listen(bool preview,bool matched);
     void apply(); void discard(); void undo();
 private:
-    void invalidateLocked();
+    void invalidateLocked(bool resetConversation = false);
     void queueLocked();
     void runWorker();
     void armLocked();
@@ -62,9 +63,11 @@ private:
     mutable std::mutex control;
     std::condition_variable wake;
     std::shared_ptr<const Clip> clip;
-    juce::String source="voice", prompt, message=juce::String::fromUTF8("Reproduce la pista y pulsa Escuchar."), provider;
+    juce::String source="auto", inferredSource="other", trackName, prompt, message=juce::String::fromUTF8("Reproduce la pista y pulsa Escuchar."), provider;
     juce::StringArray history;
-    juce::var previousGoal;
+    juce::var previousGoal, previousResult;
+    juce::String lastAction;
+    const bool demoMode;
     std::optional<Job> job;
     std::stop_source cancellation;
     bool reference=false, matched=true, busy=false, pendingSend=false, closing=false;

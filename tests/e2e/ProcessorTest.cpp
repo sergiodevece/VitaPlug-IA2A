@@ -9,10 +9,14 @@ using namespace ia2a;
 static void require(bool yes,const char* message) {
     if(!yes) throw std::runtime_error(message);
 }
-int main() {
+int main(int argc,char**) {
     juce::ScopedJuceInitialiser_GUI framework;
     try {
-        Processor plugin;
+        const bool demoMode=argc==1;
+        Processor plugin(demoMode);
+        plugin.updateTrackProperties({juce::String(demoMode?"Voz principal":"Audio 42"),{}});
+        require(plugin.snapshot().source=="auto" && plugin.snapshot().effectiveSource==(demoMode?"voice":"other"),"track name informs source");
+
         auto layout=plugin.getBusesLayout();
         layout.inputBuses.getReference(0)=layout.outputBuses.getReference(0)=juce::AudioChannelSet::mono();
         layout.inputBuses.getReference(1)=juce::AudioChannelSet::mono();
@@ -41,10 +45,23 @@ int main() {
         for(int n=0;n<500&&!plugin.snapshot().hasClip;++n)
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         require(plugin.snapshot().hasClip,"12s capture");
-        plugin.submit(juce::String::fromUTF8("Ponla en primer plano y que quede integrada en la mezcla al mismo tiempo"));
-        for(int n=0;n<6000&&plugin.snapshot().busy;++n) {
-            process(false);std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        const auto waitForTurn = [&] {
+            const auto end=std::chrono::steady_clock::now()+std::chrono::seconds(8);
+            while(plugin.snapshot().busy && std::chrono::steady_clock::now()<end) {
+                process(false);
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            require(!plugin.snapshot().busy,"conversation turn timed out");
+        };
+        if(!demoMode) {
+            plugin.submit(juce::String::fromUTF8("El inicio me salta y luego se esconde. ¿Le puedes dar continuidad?"));
+            waitForTurn();
+            require(plugin.snapshot().needsClarification && !plugin.snapshot().canApply,"clarification for unknown material");
         }
+        plugin.submit(juce::String::fromUTF8(demoMode
+            ?"Ponla en primer plano y que quede integrada en la mezcla al mismo tiempo"
+            :"Es la voz principal. Las palabras flojas casi desaparecen, pero quiero que siga respirando."));
+        waitForTurn();
         auto s=plugin.snapshot();
         std::cout<<s.provider<<" · "<<s.message<<std::endl;
         require(s.canApply&&s.preview,"candidate ready");
@@ -53,6 +70,16 @@ int main() {
         for(int n=0;n<50;++n)process(false);
         plugin.apply();plugin.getStateInformation(after);
         require(!plugin.snapshot().pending && after!=before,"apply confirms candidate");
+        if(!demoMode) {
+            plugin.captureAudio();
+            for(int n=0;n<1500;++n)process(false);
+            for(int n=0;n<500&&!plugin.snapshot().hasClip;++n)
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            require(plugin.snapshot().hasClip,"recapture for refinement");
+            plugin.submit(juce::String::fromUTF8("En este pasaje déjalo respirar como en el anterior."));
+            waitForTurn();
+            require(plugin.snapshot().message=="Conserva el ajuste aplicado en la voz.","history across confirmation and recapture");
+        }
         Processor reopened;reopened.setStateInformation(after.getData(),int(after.getSize()));
         juce::MemoryBlock restored;reopened.getStateInformation(restored);
         require(after==restored && !reopened.snapshot().pending,"offline project recall");

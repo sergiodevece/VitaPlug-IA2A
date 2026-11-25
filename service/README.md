@@ -1,12 +1,12 @@
 # Servicio de conversación de IA2A
 
-El AU emplea un intérprete de prueba integrado al abrirlo con la configuración inicial. Reconoce las peticiones de ejemplo en español y algunas correcciones como «menos aire».
+El AU espera un modelo para atender peticiones de mezcla. El intérprete de reglas de los primeros prototipos se usa en las pruebas automatizadas.
 
 ## Probar con Claude desde Logic
 
-Con Node 22.18 o posterior disponible en Terminal, guarda el proyecto y sal de Logic. Abre [Conectar-IA2A-Claude.command](Conectar-IA2A-Claude.command) y pega tu clave de Claude Console en el campo oculto de Terminal. El iniciador arranca el servicio en el Mac y abre Logic con el endpoint local. Deja Terminal abierta durante la prueba. El frontal muestra **Claude conectado** tras recibir una respuesta válida. Cada envío usa el saldo de API de tu organización.
+Con Node 22.18 o posterior disponible en Terminal, ejecuta [Conectar-IA2A-Claude.command](Conectar-IA2A-Claude.command) con `/bin/bash` y pega tu clave de Claude Console en el campo oculto. El iniciador arranca el servicio en el Mac y abre Logic. Si Logic ya tiene cargada esta versión del AU, puede encontrar el servicio al enviar una petición sin reiniciar el host. Deja Terminal abierta durante la prueba. El frontal muestra **Claude conectado** tras recibir una respuesta válida. Cada envío usa el saldo de API de tu organización.
 
-El iniciador usa `claude-haiku-5-5`. Se puede cambiar el modelo mediante `IA2A_MODEL`. Una clave de API creada para un espacio de trabajo basta. Para una clave sin espacio asignado, define `ANTHROPIC_WORKSPACE_ID` antes de arrancar. La clave se mantiene en el proceso del servicio y las peticiones a Claude incluyen texto, historial reciente y mediciones resumidas. Las grabaciones y el render permanecen en el Mac.
+El iniciador usa `claude-haiku-5-5`. Se puede cambiar el modelo mediante `IA2A_MODEL`. Una clave de API creada para un espacio de trabajo basta. Para una clave sin espacio asignado, define `ANTHROPIC_WORKSPACE_ID` antes de arrancar. La clave se mantiene en el proceso del servicio y las peticiones a Claude incluyen texto, historial reciente, tipo de fuente y mediciones resumidas. El nombre de pista, la grabación y el render permanecen en el Mac. Si es la primera instalación de esta versión del AU, reinicia Logic una vez para cargar el componente nuevo.
 
 ## Configurar el servicio manualmente
 
@@ -17,3 +17,5 @@ Para conectar otro modelo compatible con Chat Completions, definir **en el servi
 Ejecutar las pruebas con `npm --prefix service test`.
 
 Con el ejecutable ClientTest compilado, `node service/test/client-http.ts build/ClientTest` prueba el recorrido cliente → servicio → adaptador HTTP en bucle local. Añadir `--claude` para probar el recorrido de la API Messages con una respuesta simulada.
+
+Ejecutar `node service/test/processor-dialogue.ts build/ProcessorTest` para probar una aclaración de fuente y la continuidad del diálogo a través de Aplicar y una nueva captura.

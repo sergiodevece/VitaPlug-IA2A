@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -11,10 +12,55 @@ const listen=async (server) => {
   return 'http://127.0.0.1:'+server.address().port;
 };
 const useClaude=process.argv.includes("--claude");
+function conversationReply(turn, request, system) {
+  assert.equal(turn.sourceOrigin,'unknown');
+  assert.equal(turn.features.attackDb,6);
+  assert.equal(turn.features.decayDb,10);
+  assert.equal(turn.features.sideTailRatioDb,-8);
+  assert.equal(turn.features.highSpreadDb,4);
+  assert.ok(!Object.hasOwn(turn,'trackName') && !Object.hasOwn(turn.features,'pcm'));
+  assert.equal(request.headers['x-api-key'],'fixture');
+  assert.equal(request.headers.authorization,undefined);
+  assert.ok(system.includes('¿Qué tipo de fuente vamos a procesar?'));
+  if(turn.requestId==='native-chat-1') {
+    assert.equal(turn.history.length,0);
+    return {kind:'question',text:'¿Qué tipo de fuente vamos a procesar?'};
+  }
+  if(turn.requestId==='native-chat-2') {
+    assert.deepEqual(turn.history,['¿Puedes quitarle ese punto que se come el resto?','¿Qué tipo de fuente vamos a procesar?']);
+    assert.equal(turn.prompt,'Es un bajo con púa. La primera nota de cada frase pega un latigazo.');
+    return {kind:'goal',text:'Probaré a suavizar ese latigazo del bajo.',
+      goal:{allowLR:true,allowMS:false,priorities:[{objective:'reduceAttack',intensity:.6}]}};
+  }
+  assert.equal(turn.requestId,'native-chat-3');
+  assert.deepEqual(turn.history.slice(-2),[
+    'Es un bajo con púa. La primera nota de cada frase pega un latigazo.',
+    'Probaré a suavizar ese latigazo del bajo.'
+  ]);
+  assert.equal(turn.previousGoal.priorities[0].objective,'reduceAttack');
+  assert.equal(turn.previousResult.outcome,'candidate');
+  assert.equal(turn.previousResult.before.attackDb,6);
+  assert.equal(turn.previousResult.after.attackDb,3.5);
+  assert.equal(turn.previousResult.midReductionDb,4);
+  assert.equal(turn.lastAction,'applied');
+  return {kind:'goal',text:'Aflojaré un poco la compresión del ajuste conservado.',
+    goal:{allowLR:true,allowMS:false,priorities:[{objective:'easeCompression',intensity:.4}]}};
+}
+
 const model=createServer(async(req,res)=>{
   let body='';for await(const chunk of req)body+=chunk;
-  const turn=JSON.parse(JSON.parse(body).messages[useClaude?0:1].content);
-  const reply=await demoProvider(turn,new AbortController().signal);
+  const request=JSON.parse(body);
+  const turn=JSON.parse(request.messages[useClaude?0:1].content);
+  let reply;
+  try {
+    reply=useClaude && turn.requestId.startsWith('native-chat-')
+      ? conversationReply(turn,req,request.system)
+      : await demoProvider(turn,new AbortController().signal);
+  } catch(error) {
+    console.error(error);
+    res.writeHead(422).end();
+    return;
+  }
   res.setHeader('Content-Type','application/json');
   res.end(JSON.stringify(useClaude
     ? {stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify({goal:null,...reply})}]}
