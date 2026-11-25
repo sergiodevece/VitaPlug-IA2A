@@ -6,7 +6,7 @@ const drum={ask:"Los platos están muy sucios.",title:"Más espacio para los pla
 const voice={ask:"Pon la voz delante y que encaje en la mezcla.",title:"Una voz más estable",reply:"Acerco las frases suaves a las fuertes y añado un poco de AIR. Escucha si cada palabra se entiende sin perder expresión.",short:"Acerca las frases suaves y abre un poco el agudo. Compara las consonantes."};
 const data={};let current="A",ticket=0;
 const controls=(s)=>s.source==="Voz"?voice:drum;
-const fresh=()=>({source:"Bus de batería",reference:false,phase:"proposal",listen:"preview",match:true,step:1,history:[],applied:0,asked:"",note:"",text:"",variation:0});
+const fresh=()=>({source:"Bus de batería",reference:false,phase:"proposal",listen:"preview",match:true,graphOpen:false,step:1,history:[],applied:0,asked:"",note:"",text:"",variation:0});
 const esc=t=>String(t).replaceAll("&","&amp;").replaceAll('"',"&quot;").replaceAll("<","&lt;").replaceAll(">","&gt;");
 const selected=(a,b)=>a===b?"selected":"";
 function key(action,label,pressed,disabled=false,extra=""){return '<button class="key '+extra+'" data-act="'+action+'" '+(pressed==null?'':'aria-pressed="'+pressed+'"')+(disabled?' disabled':'')+'>'+label+'</button>'}
@@ -20,8 +20,14 @@ function info(s){const z=controls(s), p=s.phase==='proposal',idle=s.phase==='rea
  const heading=p?"Propuesta "+String(s.variation).padStart(2,'0'):idle?"Captura lista":"Ajuste actual";
  return {title,reply,short,heading,request:s.asked||(idle?'Fragmento de '+s.source.toLowerCase():z.ask),active,domain:s.source==="Voz"?"MONO":"MID / SIDE"};}
 function topLine(title,right){return '<div class="eyeline"><span>'+title+'</span><em>'+right+'</em></div>'}
-function full(s){const i=info(s);return head(s)+'<div class="primary"><section class="screen">'+topLine('Conversación · '+s.source,i.heading)+'<div class="request">“'+esc(i.request)+'”</div><h2>'+i.title+'</h2><p>'+esc(i.reply)+'</p></section><aside class="bay"><h3>NIVELES</h3><canvas class="levels" data-plot="led" aria-label="Niveles ilustrativos de entrada y salida"></canvas><div class="rule"></div><div class="label">Reducción · máx.</div><div class="read">'+(i.active?'3,8':'0,0')+' <small>dB</small></div></aside></div><section class="console">'+ask(s)+footer(s)+'</section>'}
-function detailed(s){const i=info(s),v=s.source==='Voz';return head(s)+'<div class="primary"><section class="screen scope">'+topLine('Reducción de ganancia','12 s · '+i.domain)+'<canvas class="trace" data-plot="trace" aria-label="Historia ilustrativa de la reducción de ganancia"></canvas><div class="legend"><span>━ '+(v?'Voz':'Mid · centro')+'</span>'+(v?'':'<span>━ Side · lados</span>')+'</div></section><section class="screen word">'+topLine('Asistente',i.heading)+'<div class="request">“'+esc(i.request)+'”</div><h2>'+i.title+'</h2><p>'+esc(i.short)+'</p></section></div><section class="console">'+ask(s)+footer(s)+'</section>'}
+function full(s){const i=info(s);return head(s)+'<div class="primary"><section class="screen">'+topLine('Conversación · '+s.source,i.heading)+'<div class="request">“'+esc(i.request)+'”</div><h2>'+i.title+'</h2><p>'+esc(i.reply)+'</p></section><aside class="bay"><h3>NIVELES</h3><canvas class="levels" data-plot="led" aria-label="Niveles ilustrativos de entrada y salida"></canvas><div class="rule"></div><div class="label">Reducción · máx.</div><div class="read">'+(i.active?'3,8':'0,0')+' <small>dB</small></div></aside></div><section class="console">'+ask(s)+footer(s)+'</section>'+graphDrawer(s)}
+function reductionGraph(s){const i=info(s),v=s.source==='Voz';return topLine('Reducción de ganancia','12 s · '+i.domain)+'<canvas class="trace" data-plot="trace" aria-label="Historia ilustrativa de la reducción de ganancia"></canvas><div class="legend"><span>━ '+(v?'Voz':'Mid · centro')+'</span>'+(v?'':'<span>━ Side · lados</span>')+'</div>'}
+function graphDrawer(s) {
+ const label=s.graphOpen?'Ocultar reducción':'Ver reducción';
+ return '<div class="drawer"><button class="key drawer-toggle" data-act="graph" aria-expanded="'+s.graphOpen+'" aria-controls="gain-history">'+label+'</button>'+
+   '<section class="screen" id="gain-history" aria-label="Historial de reducción" '+(s.graphOpen?'':'hidden')+'>'+reductionGraph(s)+'</section></div>';
+}
+function detailed(s){const i=info(s);return head(s)+'<div class="primary"><section class="screen scope">'+reductionGraph(s)+'</section><section class="screen word">'+topLine('Asistente',i.heading)+'<div class="request">“'+esc(i.request)+'”</div><h2>'+i.title+'</h2><p>'+esc(i.short)+'</p></section></div><section class="console">'+ask(s)+footer(s)+'</section>'}
 function compact(s) {
  const i=info(s);
  const step=s.phase==='ready'?0:s.phase==='applied'?2:1;
@@ -50,9 +56,14 @@ function art(el,s){const box=el.getBoundingClientRect(),w=el.clientWidth,h=el.cl
 function scale(){const r=main.querySelector('.rack');if(!r)return;const k=Math.min(1,main.clientWidth/dimensions[current]);r.style.transform='scale('+k+')';main.style.height=(r.offsetHeight*k)+'px';}
 function draw(id){current=id;const s=data[id]??=fresh();if(!s.variation)s.variation=1;const width=dimensions[id];main.style.maxWidth=width+'px';main.innerHTML='<article aria-label="Frontal '+id+'" class="rack '+id+'" style="width:'+width+'px"><canvas aria-hidden="true" class="plate"></canvas>'+({A:full,B:detailed,C:compact})[id](s)+'</article>';scale();main.querySelectorAll('[data-plot]').forEach(el=>art(el,s));const tick=++ticket;chassis(main.querySelector('.plate'),id).then(()=>{if(ticket===tick)document.body.dataset.rendered=id});document.querySelectorAll('[data-version]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.version===id));document.querySelector('#caption').textContent=descriptions[id]}
 main.addEventListener('input',e=>{if(e.target.id==='prompt')data[current].text=e.target.value});
-main.addEventListener('change',e=>{const s=data[current];if(e.target.id==='src'){const src=e.target.value;data[current]={...fresh(),source:src,variation:1}}else if(e.target.id==='level')s.match=e.target.value==='matched';draw(current)});
+main.addEventListener('change',e=>{const s=data[current];if(e.target.id==='src'){const src=e.target.value;data[current]={...fresh(),source:src,variation:1,graphOpen:s.graphOpen}}else if(e.target.id==='level')s.match=e.target.value==='matched';draw(current)});
 main.addEventListener('submit',e=>{e.preventDefault();const s=data[current];const typed=s.text.trim();if(!typed){main.querySelector('#prompt').focus();return}Object.assign(s,{asked:typed,text:'',phase:'proposal',variation:s.variation+1,listen:'preview',note:'Variación de ejemplo lista para comparar.'});draw(current)});
 main.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;e.preventDefault();const s=data[current];switch(b.dataset.act){
+case 'graph':
+ s.graphOpen=!s.graphOpen;
+ draw(current);
+ main.querySelector('.drawer-toggle').focus({preventScroll:true});
+ return;
 case 'ref':s.reference=!s.reference;break;
 case 'before':s.listen='applied';break;
 case 'after':s.listen='preview';break;

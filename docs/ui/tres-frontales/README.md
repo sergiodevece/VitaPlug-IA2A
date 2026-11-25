@@ -4,11 +4,15 @@ Las tres maquetas parten del mismo bus de batería y de la petición «Los plato
 
 Abrir [el comparador](index.html) localmente en un navegador. Se puede alternar entre Antes y Después, cambiar el nivel de comparación, aplicar, deshacer y pedir una variación.
 
-## A · Conversación
+## A · Conversación · Frontal elegido
 
 La petición y la respuesta se leen juntas. Los indicadores de entrada, salida y reducción dejan espacio para explicar qué escuchar.
 
+El botón **Ver reducción** despliega el historial de B bajo los controles de escucha.
+
 ![Frontal de conversación](A.png)
+
+![Frontal elegido con el historial desplegado](A-reduccion.png)
 
 ## B · Centro y lados
 
