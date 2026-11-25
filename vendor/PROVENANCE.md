@@ -1,0 +1,7 @@
+# Optical engine provenance
+
+The ten headers in `lab2c/DSP/` are unmodified copies of `Source/DSP/` from the author’s VitaPlug-LAB2C repository, commit `32ca42ba9bc7f4f925a82d1697b460ece57701b5`, version 0.1.11. The block orchestration in `src/dsp/OpticalPath.cpp` derives from the float render path of `Source/PluginProcessor.cpp` in that revision. It retains both warmed stereo engines, the order of gain/filter stages, and the original ramps. The original revision includes no separate DSP licence file. Existing header comments are retained.
+
+`tests/dsp/oracle/regenerate.sh /path/to/LAB2C /path/to/JUCE` builds the original JUCE processor from a temporary git archive, updates the frozen interleaved float32 fixtures and SHA-256 manifest in `tests/fixtures/lab2c/`. It leaves the temporary build path in its output. JUCE is fixed at `72782788ce18c2d4d760b28e0921d6ffc6431102` (9.0.2). The original runs the separate generator in `tests/dsp/oracle/Generate.cpp`. The production target has no dependency on the generator or JUCE.
+
+The checked-in little-endian fixtures were generated with Apple Clang 21.0.0 (arm64), Release. `tests/dsp/Scenario.h` defines a deterministic integer-derived signal and the block schedule. Mono and stereo run at 44.1, 48 and 96 kHz with 37- and 256-frame blocks. Each render exercises compression, gain/HPF/AIR, linked L/R, switching to M/S and back, and reset. Per-side gain and AIR targets differ. The CTest threshold is a maximum absolute sample error of 1e-6. Transparent processing must reproduce the input exactly.

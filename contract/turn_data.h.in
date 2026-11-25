@@ -1,0 +1,5 @@
+#pragma once
+namespace ia2a {
+inline constexpr char schemaJson[] = R"ia2a(@IA2A_SCHEMA_JSON@)ia2a";
+inline constexpr char demoJson[] = R"ia2a(@IA2A_DEMO_JSON@)ia2a";
+}

@@ -1,0 +1,115 @@
+[
+  {
+    "name": "voice",
+    "request": {
+      "version": 1,
+      "requestId": "case-01",
+      "source": "voice",
+      "channels": 1,
+      "prompt": "ponla en primer plano y que quede integrada en la mezcla al mismo tiempo",
+      "history": [],
+      "features": {
+        "usable": true,
+        "phraseSpreadDb": 9,
+        "peakDb": -4
+      },
+      "previousGoal": null,
+      "hasApplied": false,
+      "hasPending": false
+    },
+    "expectedKind": "goal"
+  },
+  {
+    "name": "drums",
+    "request": {
+      "version": 1,
+      "requestId": "case-01",
+      "source": "drums",
+      "channels": 2,
+      "prompt": "los platos están muy sucios",
+      "history": [],
+      "features": {
+        "usable": true,
+        "phraseSpreadDb": 9,
+        "peakDb": -4
+      },
+      "previousGoal": null,
+      "hasApplied": false,
+      "hasPending": false
+    },
+    "expectedKind": "goal"
+  },
+  {
+    "name": "refine",
+    "request": {
+      "version": 1,
+      "requestId": "case-01",
+      "source": "voice",
+      "channels": 1,
+      "prompt": "menos aire",
+      "history": [],
+      "features": {
+        "usable": true,
+        "phraseSpreadDb": 9,
+        "peakDb": -4
+      },
+      "previousGoal": {
+        "priorities": [
+          {
+            "objective": "bringForward",
+            "intensity": 0.6
+          },
+          {
+            "objective": "air",
+            "intensity": 0.3
+          }
+        ],
+        "allowLR": true,
+        "allowMS": false
+      },
+      "hasApplied": false,
+      "hasPending": true
+    },
+    "expectedKind": "goal"
+  },
+  {
+    "name": "question",
+    "request": {
+      "version": 1,
+      "requestId": "case-01",
+      "source": "voice",
+      "channels": 1,
+      "prompt": "no sé qué me molesta",
+      "history": [],
+      "features": {
+        "usable": true,
+        "phraseSpreadDb": 9,
+        "peakDb": -4
+      },
+      "previousGoal": null,
+      "hasApplied": false,
+      "hasPending": false
+    },
+    "expectedKind": "question"
+  },
+  {
+    "name": "keep",
+    "request": {
+      "version": 1,
+      "requestId": "case-01",
+      "source": "voice",
+      "channels": 1,
+      "prompt": "déjalo así",
+      "history": [],
+      "features": {
+        "usable": true,
+        "phraseSpreadDb": 9,
+        "peakDb": -4
+      },
+      "previousGoal": null,
+      "hasApplied": false,
+      "hasPending": false
+    },
+    "expectedKind": "keep"
+  }
+]

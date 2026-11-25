@@ -1,0 +1,6 @@
+add_executable(ia2a_eval tools/ia2a_eval.cpp)
+target_link_libraries(ia2a_eval PRIVATE ia2a_client ia2a_musical ia2a_session juce::juce_audio_formats)
+if(BUILD_TESTING)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME WorkflowTest COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/WorkflowTest.py" "$<TARGET_FILE:ia2a_eval>")
+endif()

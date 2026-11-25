@@ -1,0 +1,8 @@
+add_library(ia2a_dsp STATIC src/dsp/OpticalPath.cpp)
+target_compile_features(ia2a_dsp PUBLIC cxx_std_20)
+target_include_directories(ia2a_dsp PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/src")
+if(BUILD_TESTING)
+    add_executable(OpticalParity tests/dsp/Parity.cpp)
+    target_link_libraries(OpticalParity PRIVATE ia2a_dsp)
+    add_test(NAME OpticalParity COMMAND OpticalParity "${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/lab2c")
+endif()

@@ -1,0 +1,154 @@
+{
+  "rules": [
+    {
+      "any": [
+        "déjalo así",
+        "dejalo asi",
+        "está bien así",
+        "conservar",
+        "mantén el ajuste"
+      ],
+      "answer": {
+        "kind": "keep",
+        "text": "Conserva el ajuste que estás escuchando."
+      }
+    },
+    {
+      "any": [
+        "menos aire",
+        "menos air",
+        "menos brillo",
+        "demasiado brillante"
+      ],
+      "answer": {
+        "kind": "goal",
+        "text": "Voy a probar una versión con menos aire.",
+        "goal": {
+          "allowLR": true,
+          "allowMS": false,
+          "priorities": [
+            {
+              "objective": "air",
+              "intensity": -0.5
+            }
+          ]
+        }
+      }
+    },
+    {
+      "any": [
+        "más aire",
+        "mas aire",
+        "más brillo",
+        "abre el agudo"
+      ],
+      "answer": {
+        "kind": "goal",
+        "text": "Voy a probar una apertura suave del agudo.",
+        "goal": {
+          "allowLR": true,
+          "allowMS": false,
+          "priorities": [
+            {
+              "objective": "air",
+              "intensity": 0.45
+            }
+          ]
+        }
+      }
+    },
+    {
+      "source": "drums",
+      "any": [
+        "plato",
+        "colas",
+        "respirar",
+        "platillo"
+      ],
+      "answer": {
+        "kind": "goal",
+        "text": "Probaré cómo conservar el golpe y dejar respirar las colas de los platos.",
+        "goal": {
+          "allowLR": true,
+          "allowMS": true,
+          "priorities": [
+            {
+              "objective": "releaseTails",
+              "intensity": 0.8
+            },
+            {
+              "objective": "preserveAttack",
+              "intensity": 0.75
+            }
+          ]
+        }
+      }
+    },
+    {
+      "source": "voice",
+      "any": [
+        "delante",
+        "primer plano",
+        "presencia",
+        "integrada",
+        "adelante",
+        "acercar"
+      ],
+      "answer": {
+        "kind": "goal",
+        "text": "Probaré una voz más estable y cercana, con algo de aire si la toma lo admite.",
+        "goal": {
+          "allowLR": true,
+          "allowMS": false,
+          "priorities": [
+            {
+              "objective": "stabilise",
+              "intensity": 0.8
+            },
+            {
+              "objective": "bringForward",
+              "intensity": 0.65
+            },
+            {
+              "objective": "air",
+              "intensity": 0.3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "any": [
+        "estable",
+        "saltos",
+        "disparej",
+        "regular",
+        "idas y venidas",
+        "nivelar",
+        "altibajo"
+      ],
+      "answer": {
+        "kind": "goal",
+        "text": "Probaré a acercar las partes suaves a las fuertes conservando la articulación.",
+        "goal": {
+          "allowLR": true,
+          "allowMS": false,
+          "priorities": [
+            {
+              "objective": "stabilise",
+              "intensity": 0.7
+            },
+            {
+              "objective": "preserveAttack",
+              "intensity": 0.35
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "otherwise": {
+    "kind": "question",
+    "text": "¿Quieres estabilizar el nivel, dar más presencia o dejar respirar las colas?"
+  }
+}

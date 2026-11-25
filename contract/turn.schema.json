@@ -1,0 +1,389 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "request": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "requestId": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_.-]{1,80}$"
+        },
+        "source": {
+          "enum": [
+            "voice",
+            "drums",
+            "other"
+          ]
+        },
+        "channels": {
+          "enum": [
+            1,
+            2
+          ]
+        },
+        "prompt": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 640
+        },
+        "history": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 640
+          },
+          "minItems": 0,
+          "maxItems": 8
+        },
+        "features": {
+          "type": "object",
+          "properties": {
+            "peakDb": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "rmsDb": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "phraseSpreadDb": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "crestDb": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "highRatioDb": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "midHighEnergy": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "sideHighEnergy": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "referenceContrastDb": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "referenceOverlap": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "attackDb": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "decayDb": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "monoFoldDb": {
+              "type": "number",
+              "minimum": -1000,
+              "maximum": 1000
+            },
+            "usable": {
+              "type": "boolean"
+            },
+            "hasReference": {
+              "type": "boolean"
+            },
+            "hasReferenceSignal": {
+              "type": "boolean"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        },
+        "previousGoal": {
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "$ref": "#/$defs/goal"
+            }
+          ]
+        },
+        "hasApplied": {
+          "type": "boolean"
+        },
+        "hasPending": {
+          "type": "boolean"
+        },
+        "appliedSettings": {
+          "$ref": "#/$defs/settingsSummary"
+        },
+        "pendingSettings": {
+          "$ref": "#/$defs/settingsSummary"
+        }
+      },
+      "required": [
+        "version",
+        "requestId",
+        "source",
+        "channels",
+        "prompt",
+        "history",
+        "features",
+        "previousGoal",
+        "hasApplied",
+        "hasPending"
+      ],
+      "additionalProperties": false
+    },
+    "goal": {
+      "type": "object",
+      "properties": {
+        "priorities": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "objective": {
+                "enum": [
+                  "stabilise",
+                  "bringForward",
+                  "air",
+                  "preserveAttack",
+                  "releaseTails"
+                ]
+              },
+              "intensity": {
+                "type": "number",
+                "minimum": -1,
+                "maximum": 1
+              }
+            },
+            "required": [
+              "objective",
+              "intensity"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1,
+          "maxItems": 5
+        },
+        "allowLR": {
+          "type": "boolean"
+        },
+        "allowMS": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "priorities",
+        "allowLR",
+        "allowMS"
+      ],
+      "additionalProperties": false
+    },
+    "response": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "const": 1
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.-]{1,80}$"
+            },
+            "provider": {
+              "enum": [
+                "local-demo",
+                "http"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "goal"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 600
+            },
+            "goal": {
+              "$ref": "#/$defs/goal"
+            }
+          },
+          "required": [
+            "version",
+            "requestId",
+            "provider",
+            "kind",
+            "text",
+            "goal"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "version": {
+              "const": 1
+            },
+            "requestId": {
+              "type": "string",
+              "pattern": "^[a-zA-Z0-9_.-]{1,80}$"
+            },
+            "provider": {
+              "enum": [
+                "local-demo",
+                "http"
+              ]
+            },
+            "kind": {
+              "enum": [
+                "question",
+                "keep"
+              ]
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 600
+            }
+          },
+          "required": [
+            "version",
+            "requestId",
+            "provider",
+            "kind",
+            "text"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "settingsSummary": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "mono",
+            "lr",
+            "ms"
+          ]
+        },
+        "inputTrimDb": {
+          "type": "number",
+          "minimum": -24,
+          "maximum": 24
+        },
+        "outputGainDb": {
+          "type": "number",
+          "minimum": -24,
+          "maximum": 24
+        },
+        "mid": {
+          "type": "object",
+          "properties": {
+            "thresholdDb": {
+              "type": "number",
+              "minimum": -60,
+              "maximum": 0
+            },
+            "ratio": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "airDb": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10
+            },
+            "makeupDb": {
+              "type": "number",
+              "minimum": -24,
+              "maximum": 24
+            }
+          },
+          "required": [
+            "thresholdDb",
+            "ratio",
+            "airDb",
+            "makeupDb"
+          ],
+          "additionalProperties": false
+        },
+        "side": {
+          "type": "object",
+          "properties": {
+            "thresholdDb": {
+              "type": "number",
+              "minimum": -60,
+              "maximum": 0
+            },
+            "ratio": {
+              "type": "number",
+              "minimum": 1,
+              "maximum": 20
+            },
+            "airDb": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10
+            },
+            "makeupDb": {
+              "type": "number",
+              "minimum": -24,
+              "maximum": 24
+            }
+          },
+          "required": [
+            "thresholdDb",
+            "ratio",
+            "airDb",
+            "makeupDb"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "enabled",
+        "mode",
+        "inputTrimDb",
+        "outputGainDb",
+        "mid",
+        "side"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/request"
+    },
+    {
+      "$ref": "#/$defs/response"
+    }
+  ]
+}

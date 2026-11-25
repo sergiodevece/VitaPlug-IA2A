@@ -1,0 +1,60 @@
+#pragma once
+
+#include "Goal.h"
+#include <juce_core/juce_core.h>
+#include <condition_variable>
+#include <functional>
+#include <mutex>
+#include <optional>
+#include <stop_token>
+#include <thread>
+
+namespace ia2a {
+
+struct Features;
+struct Settings;
+juce::var turnSettings(const Settings&,int channels);
+juce::var turnFeatures(const Features&);
+
+struct Turn {
+    juce::String requestId, source, prompt;
+    int channels = 1;
+    juce::StringArray history;
+    juce::var features {new juce::DynamicObject}, previousGoal, appliedSettings, pendingSettings;
+    bool hasApplied = false, hasPending = false;
+};
+
+struct ClientReply {
+    enum class Kind { goal, question, keep, error, cancelled };
+    Kind kind = Kind::error;
+    juce::String requestId, text, provider;
+    Goal goal;
+    juce::var wireGoal;
+};
+
+class Client {
+public:
+    using Completion = std::function<void(ClientReply)>;
+    Client();
+    Client(juce::String endpoint, juce::String token);
+    ~Client();
+
+    // Synchronous, for worker threads. Empty URL selects the embedded demo.
+    ClientReply request(const Turn&, std::stop_token = {}) const;
+    // Replaces prior work. Completion runs on the private worker thread.
+    void send(Turn, Completion);
+    void cancel();
+
+private:
+    struct Job { Turn turn; Completion done; };
+    void run();
+    juce::String url, bearer;
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::optional<Job> queued;
+    std::stop_source active;
+    bool closing = false;
+    std::thread worker;
+};
+
+}
