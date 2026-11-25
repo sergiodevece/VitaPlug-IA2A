@@ -11,7 +11,7 @@ namespace ia2a {
 struct Snapshot {
     juce::String source,effectiveSource,trackName,prompt,message,provider;
     bool reference{},auxActive{},recording{},busy{},pending{},canApply{},canUndo{},preview{},matched{},hasClip{},midSide{};
-    bool needsClarification{},turnFailed{};
+    bool needsClarification{},turnFailed{},usesPreviousProposal{};
     float progress{},inputDb{},outputDb{},reductionDb{};
     int channels{};
     std::array<float,120> grMain{},grSide{};
@@ -47,14 +47,15 @@ public:
     void apply(); void discard(); void undo();
 private:
     void invalidateLocked(bool resetConversation = false);
-    void queueLocked();
+    void queueLocked(std::optional<Goal> direct);
     void runWorker();
     void armLocked();
     struct Job {
         Turn turn;
         std::shared_ptr<const Clip> clip;
         Settings applied,seed;
-        std::uint64_t ticket=0;
+        std::optional<Goal> direct;
+        std::uint64_t ticket=0, captureRevision=0;
         std::stop_token stop;
     };
     Capture capture;
@@ -71,7 +72,7 @@ private:
     std::optional<Job> job;
     std::stop_source cancellation;
     bool reference=false, matched=true, busy=false, pendingSend=false, closing=false;
-    bool needsClarification=false, turnFailed=false;
+    bool needsClarification=false, turnFailed=false, usesPreviousProposal=false;
     std::uint64_t knownRevision=0;
     std::atomic<std::uint64_t> monitorRevision{0};
     std::atomic<bool> auxActive{false},ms{false};

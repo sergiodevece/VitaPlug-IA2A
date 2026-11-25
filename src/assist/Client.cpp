@@ -31,6 +31,7 @@ var encode(const Turn& t) {
     if(!t.previousResult.isVoid())put(out,"previousResult",t.previousResult);
     if(t.sourceOrigin.isNotEmpty())put(out,"sourceOrigin",t.sourceOrigin);
     if(t.lastAction.isNotEmpty())put(out,"lastAction",t.lastAction);
+    if(t.auditioning.isNotEmpty())put(out,"auditioning",t.auditioning);
     put(out,"hasApplied",t.hasApplied); put(out,"hasPending",t.hasPending);
     return out;
 }
@@ -84,24 +85,78 @@ bool matches(const var& rule, const var& value) {
     return false;
 }
 
+constexpr std::pair<const char*,Objective> objectives[]={
+    {"stabilise",Objective::Stabilise},{"bringForward",Objective::BringForward},{"air",Objective::Air},
+    {"preserveAttack",Objective::PreserveAttack},{"releaseTails",Objective::ReleaseTails},
+    {"reduceAttack",Objective::ReduceAttack},{"easeCompression",Objective::EaseCompression},
+    {"bassWeight",Objective::BassWeight}};
+constexpr std::pair<const char*,Control> controls[]={
+    {"thresholdDb",Control::Threshold},{"ratio",Control::Ratio},{"attackMs",Control::Attack},
+    {"fastReleaseMs",Control::FastRelease},{"slowReleaseMs",Control::SlowRelease},
+    {"memory",Control::Memory},{"kneeDb",Control::Knee},{"hpfHz",Control::DetectorFrequency},
+    {"airDb",Control::Air},{"makeupDb",Control::MakeUp},{"inputTrimDb",Control::InputTrim},
+    {"outputGainDb",Control::OutputGain},{"hpfOn",Control::DetectorEnabled},
+    {"enabled",Control::Enabled},{"midSide",Control::StereoMode}};
+constexpr std::pair<const char*,ControlDomain> domains[]={
+    {"both",ControlDomain::Both},{"main",ControlDomain::Main},{"side",ControlDomain::Side}};
+constexpr std::pair<const char*,ControlChange> changes[]={
+    {"set",ControlChange::Set},{"increase",ControlChange::Increase},{"decrease",ControlChange::Decrease}};
+
+template<class T, size_t N>
+std::optional<T> decodeToken(const String& token,const std::pair<const char*,T>(&entries)[N]) {
+    const auto match=std::find_if(std::begin(entries),std::end(entries),
+        [&](const auto& entry){return token==entry.first;});
+    if(match==std::end(entries))return {};
+    return match->second;
+}
+
+template<class T, size_t N>
+const char* encodeToken(T value,const std::pair<const char*,T>(&entries)[N]) {
+    const auto match=std::find_if(std::begin(entries),std::end(entries),
+        [&](const auto& entry){return entry.second==value;});
+    return match==std::end(entries)?"":match->first;
+}
+
+std::optional<ControlEdit> decodeEdit(const var& wire) {
+    const auto control=decodeToken(wire["control"].toString(),controls);
+    const auto domain=decodeToken(wire["domain"].toString(),domains);
+    const auto change=decodeToken(wire["change"].toString(),changes);
+    if(!control || !domain || !change)return {};
+    const bool global=*control==Control::InputTrim || *control==Control::OutputGain ||
+        *control==Control::Enabled || *control==Control::StereoMode;
+    if(global && *domain!=ControlDomain::Both)return {};
+    std::optional<float> value;
+    if(wire.hasProperty("value"))value=static_cast<float>(wire["value"]);
+    const bool toggle=*control==Control::DetectorEnabled || *control==Control::Enabled ||
+        *control==Control::StereoMode;
+    if(toggle && (*change!=ControlChange::Set || (value!=0.f && value!=1.f)))return {};
+    if((*change==ControlChange::Set && !value) ||
+       (*change!=ControlChange::Set && value && *value<=0))return {};
+    return ControlEdit{*control,*domain,*change,value};
+}
+
 std::optional<Goal> decodeGoal(const var& wire,const String& source,int channels) {
     if (!matches(definitions()["goal"],wire)) return {};
     Goal goal;
     goal.source=source=="voice"?Source::Voice:source=="drums"?Source::DrumBus:Source::Other;
     goal.allowMS=static_cast<bool>(wire["allowMS"]); goal.allowLR=static_cast<bool>(wire["allowLR"]);
     if ((!goal.allowMS && !goal.allowLR) || (goal.allowMS && channels==1)) return {};
-    static constexpr std::pair<const char*,Objective> vocabulary[]={
-        {"stabilise",Objective::Stabilise},{"bringForward",Objective::BringForward},{"air",Objective::Air},
-        {"preserveAttack",Objective::PreserveAttack},{"releaseTails",Objective::ReleaseTails},
-        {"reduceAttack",Objective::ReduceAttack},{"easeCompression",Objective::EaseCompression}};
     for (const auto& p : *wire["priorities"].getArray()) {
-        const auto name=p["objective"].toString();
-        const auto match=std::find_if(std::begin(vocabulary),std::end(vocabulary),[&](auto entry){return name==entry.first;});
+        const auto objective=decodeToken(p["objective"].toString(),objectives);
         const auto strength=static_cast<float>(p["intensity"]);
-        if (match==std::end(vocabulary) || (strength<0 && match->second!=Objective::Air)) return {};
-        if (std::any_of(goal.priorities.begin(),goal.priorities.end(),[&](auto prev){return prev.objective==match->second;})) return {};
-        goal.priorities.push_back({match->second,strength});
+        if (!objective || (strength<0 && *objective!=Objective::Air)) return {};
+        if (std::any_of(goal.priorities.begin(),goal.priorities.end(),[&](auto prev){return prev.objective==*objective;})) return {};
+        goal.priorities.push_back({*objective,strength});
     }
+    if(const auto* edits=wire["edits"].getArray()) {
+        for(const auto& raw:*edits) {
+            auto edit=decodeEdit(raw);
+            if(!edit)return {};
+            goal.edits.push_back(*edit);
+        }
+    }
+    goal.compensateGain=static_cast<bool>(wire["compensateGain"]);
+    if(goal.edits.empty() && goal.priorities.empty())return {};
     return goal;
 }
 
@@ -182,7 +237,7 @@ ClientReply conversationFailure(const Turn& turn, const TurnResponse& response) 
     } else if(code=="provider-auth") {
         text="Claude rechazó la clave o el acceso al modelo. Comprueba la configuración en Terminal.";
     } else if(code=="provider-response" || response.status==200) {
-        text="La respuesta no contenía una propuesta válida. Puedes reintentar sin volver a capturar.";
+        text="El asistente devolvió un formato que IA2A no pudo leer. Puedes reintentar con tu misma petición y tu captura.";
     } else if(response.status==400 || response.status==413) {
         text="El servicio rechazó los datos de este turno. En Terminal aparece el motivo técnico.";
     }
@@ -192,11 +247,42 @@ ClientReply conversationFailure(const Turn& turn, const TurnResponse& response) 
 
 }
 
+juce::var encodeGoal(const Goal& goal) {
+    auto out=object();
+    put(out,"allowLR",goal.allowLR);
+    put(out,"allowMS",goal.allowMS);
+    juce::Array<var> priorities;
+    for(const auto& priority:goal.priorities) {
+        auto item=object();
+        put(item,"objective",encodeToken(priority.objective,objectives));
+        put(item,"intensity",priority.intensity);
+        priorities.add(std::move(item));
+    }
+    put(out,"priorities",priorities);
+    if(!goal.edits.empty()) {
+        juce::Array<var> edits;
+        for(const auto& edit:goal.edits) {
+            auto item=object();
+            put(item,"control",encodeToken(edit.control,controls));
+            put(item,"domain",encodeToken(edit.domain,domains));
+            put(item,"change",encodeToken(edit.change,changes));
+            if(edit.value)put(item,"value",*edit.value);
+            edits.add(std::move(item));
+        }
+        put(out,"edits",edits);
+    }
+    if(goal.compensateGain)put(out,"compensateGain",true);
+    return out;
+}
+
 juce::var turnSettings(const Settings& settings,int channels) {
     auto domain=[](const DomainSettings& d) {
         auto bank=object();
         put(bank,"thresholdDb",d.thresholdDb); put(bank,"ratio",d.ratio);
         put(bank,"airDb",d.airDb); put(bank,"makeupDb",d.makeupDb);
+        put(bank,"attackMs",d.attackMs); put(bank,"fastReleaseMs",d.fastReleaseMs);
+        put(bank,"slowReleaseMs",d.slowReleaseMs); put(bank,"memory",d.memory);
+        put(bank,"kneeDb",d.kneeDb); put(bank,"hpfHz",d.hpfHz); put(bank,"hpfOn",d.hpfOn);
         return bank;
     };
     auto out=object();
@@ -213,7 +299,7 @@ juce::var turnFeatures(const Features& f) {
     put(out,"crestDb",f.crestDb); put(out,"attackDb",f.attackDb); put(out,"decayDb",f.decayDb);
     put(out,"highRatioDb",f.highRatioDb); put(out,"midHighEnergy",f.midHighEnergy); put(out,"sideHighEnergy",f.sideHighEnergy);
     put(out,"referenceContrastDb",f.referenceContrastDb); put(out,"referenceOverlap",f.referenceOverlap); put(out,"monoFoldDb",f.monoFoldDb);
-    put(out,"highSpreadDb",f.highSpreadDb); put(out,"midEnergy",f.midEnergy); put(out,"sideEnergy",f.sideEnergy);
+    put(out,"highSpreadDb",f.highSpreadDb); put(out,"lowRatioDb",f.lowRatioDb); put(out,"midEnergy",f.midEnergy); put(out,"sideEnergy",f.sideEnergy);
     put(out,"sideTailRatioDb",f.sideTailRatioDb); put(out,"highPulseCorrelation",std::clamp(f.highPulseCorrelation,-1.f,1.f));
     put(out,"clippedFraction",f.clippedFraction); put(out,"monitorDb",f.monitorDb);
     put(out,"activeWindows",f.activeWindows); put(out,"phraseWindows",f.phraseWindows);
@@ -243,7 +329,9 @@ Client::Client(String endpoint,String token):url(std::move(endpoint)),bearer(std
 ClientReply Client::request(const Turn& t,std::stop_token stop) const {
     if(stop.stop_requested())return failure(t,true);
     const auto wire=encode(t);
-    if(!matches(definitions()["request"],wire) || (!t.previousGoal.isVoid() && !decodeGoal(t.previousGoal,t.source,2)))return failure(t);
+    if(!matches(definitions()["request"],wire) ||
+       (t.auditioning=="pending" && !t.hasPending) ||
+       (!t.previousGoal.isVoid() && !decodeGoal(t.previousGoal,t.source,2)))return failure(t);
     auto body=juce::JSON::toString(wire,true);
     if(body.getNumBytesAsUTF8()>16384)return failure(t);
     auto endpoint=url;

@@ -14,6 +14,14 @@ int main() {
     check(wide.sideHighEnergy>centre.sideHighEnergy && wide.sideHighEnergy>wide.midHighEnergy,"side highs");
     check(centre.sideHighEnergy==0 && std::isfinite(centre.monoFoldDb),"centred stereo");
     check(jumps.attackDb>=0 && jumps.crestDb>0 && !jumps.hasReference,"voice alone");
+    auto lowTone=even, highTone=even;
+    for(std::size_t n=0;n<even.track[0].size();++n) {
+        lowTone.track[0][n]=.2f*std::sin(fixtures::tau*70.*n/even.sampleRate);
+        highTone.track[0][n]=.2f*std::sin(fixtures::tau*3000.*n/even.sampleRate);
+    }
+    const auto lows=analyse(lowTone), highs=analyse(highTone);
+    check(lows.usable && highs.usable && lows.lowRatioDb>highs.lowRatioDb+16.f,
+        "low-band weight distinguishes bass from equal-level high tones");
     even.reference = even.track;
     for(std::size_t n=0;n<even.track[0].size();++n) {
         if(n>=32000) even.track[0][n]=0;

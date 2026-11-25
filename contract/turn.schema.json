@@ -122,6 +122,12 @@
             "user",
             "unknown"
           ]
+        },
+        "auditioning": {
+          "enum": [
+            "applied",
+            "pending"
+          ]
         }
       },
       "required": [
@@ -154,7 +160,8 @@
                   "preserveAttack",
                   "releaseTails",
                   "reduceAttack",
-                  "easeCompression"
+                  "easeCompression",
+                  "bassWeight"
                 ]
               },
               "intensity": {
@@ -169,14 +176,71 @@
             ],
             "additionalProperties": false
           },
-          "minItems": 1,
-          "maxItems": 7
+          "minItems": 0,
+          "maxItems": 8
         },
         "allowLR": {
           "type": "boolean"
         },
         "allowMS": {
           "type": "boolean"
+        },
+        "compensateGain": {
+          "type": "boolean"
+        },
+        "edits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "control": {
+                "enum": [
+                  "thresholdDb",
+                  "ratio",
+                  "attackMs",
+                  "fastReleaseMs",
+                  "slowReleaseMs",
+                  "memory",
+                  "kneeDb",
+                  "hpfHz",
+                  "airDb",
+                  "makeupDb",
+                  "inputTrimDb",
+                  "outputGainDb",
+                  "hpfOn",
+                  "enabled",
+                  "midSide"
+                ]
+              },
+              "domain": {
+                "enum": [
+                  "both",
+                  "main",
+                  "side"
+                ]
+              },
+              "change": {
+                "enum": [
+                  "set",
+                  "increase",
+                  "decrease"
+                ]
+              },
+              "value": {
+                "type": "number",
+                "minimum": -1000000,
+                "maximum": 1000000
+              }
+            },
+            "required": [
+              "control",
+              "domain",
+              "change"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 32
         }
       },
       "required": [
@@ -314,6 +378,39 @@
               "type": "number",
               "minimum": -24,
               "maximum": 24
+            },
+            "attackMs": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 200
+            },
+            "fastReleaseMs": {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 3000
+            },
+            "slowReleaseMs": {
+              "type": "number",
+              "minimum": 100,
+              "maximum": 15000
+            },
+            "memory": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "kneeDb": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 24
+            },
+            "hpfHz": {
+              "type": "number",
+              "minimum": 20,
+              "maximum": 500
+            },
+            "hpfOn": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -346,6 +443,39 @@
               "type": "number",
               "minimum": -24,
               "maximum": 24
+            },
+            "attackMs": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 200
+            },
+            "fastReleaseMs": {
+              "type": "number",
+              "minimum": 10,
+              "maximum": 3000
+            },
+            "slowReleaseMs": {
+              "type": "number",
+              "minimum": 100,
+              "maximum": 15000
+            },
+            "memory": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "kneeDb": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 24
+            },
+            "hpfHz": {
+              "type": "number",
+              "minimum": 20,
+              "maximum": 500
+            },
+            "hpfOn": {
+              "type": "boolean"
             }
           },
           "required": [
@@ -483,6 +613,11 @@
           "type": "number",
           "minimum": 0,
           "maximum": 1000000
+        },
+        "lowRatioDb": {
+          "type": "number",
+          "minimum": -1000,
+          "maximum": 1000
         }
       },
       "required": [],

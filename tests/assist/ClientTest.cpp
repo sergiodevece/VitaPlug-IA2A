@@ -57,6 +57,48 @@ static void expectClaudeConversation(const char* endpoint) {
            ease.goal.priorities.front().objective==Objective::EaseCompression,"Claude should refine the preceding measured trial");
 }
 
+static void expectDirectControls(const char* endpoint) {
+    using namespace ia2a;
+    Goal prior;
+    prior.allowMS=false;
+    prior.edits.push_back({Control::Threshold,ControlDomain::Both,ControlChange::Decrease,3.f});
+    prior.compensateGain=true;
+    Turn turn;
+    turn.requestId="native-controls-1";
+    turn.source="drums";
+    turn.prompt="Ahora pon el umbral en -32,5 dB, sube el AIR y compensa el volumen.";
+    turn.channels=2;
+    turn.auditioning="pending";
+    turn.hasPending=true;
+    turn.pendingSettings=turnSettings(Settings{},2);
+    turn.previousGoal=encodeGoal(prior);
+
+    Client claude(endpoint,"test-token");
+    const auto reply=claude.request(turn);
+    expect(reply.kind==ClientReply::Kind::goal && reply.goal.priorities.empty() &&
+           reply.goal.edits.size()==3 && reply.goal.compensateGain,"direct goal with no musical priorities");
+    const auto& threshold=reply.goal.edits.front();
+    const auto& air=reply.goal.edits[1];
+    expect(threshold.control==Control::Threshold && threshold.change==ControlChange::Set &&
+           threshold.domain==ControlDomain::Both && threshold.value==-32.5f,"absolute threshold value lost");
+    expect(air.control==Control::Air && air.change==ControlChange::Increase &&
+           !air.value,"nullable default became a numeric edit");
+    const auto& detector=reply.goal.edits.back();
+    expect(detector.control==Control::DetectorEnabled && detector.value==1.f,
+           "detector filter switch did not survive the wire");
+
+    turn.requestId="native-controls-2";
+    turn.prompt="Quiero que conserve más peso en los graves.";
+    Features features;
+    features.lowRatioDb=-6.f;
+    turn.features=turnFeatures(features);
+    turn.previousGoal=reply.wireGoal;
+    const auto bass=claude.request(turn);
+    expect(bass.kind==ClientReply::Kind::goal && bass.goal.priorities.size()==1 &&
+           bass.goal.priorities.front().objective==Objective::BassWeight,
+           "low end weight was not interpreted as a compressor objective");
+}
+
 int main(int argc, char** argv) {
     using namespace ia2a;
     try {
@@ -100,7 +142,10 @@ int main(int argc, char** argv) {
             turn.features.getDynamicObject()->setProperty("pcm","forbidden");
             expect(local.request(turn).kind == ClientReply::Kind::error, "invalid request accepted");
         }
-        if(argc>=3 && juce::String(argv[2])=="claude") expectClaudeConversation(argv[1]);
+        if(argc>=3 && juce::String(argv[2])=="claude") {
+            expectClaudeConversation(argv[1]);
+            expectDirectControls(argv[1]);
+        }
     } catch (const std::exception& ex) { std::cerr << ex.what() << '\n'; return 1; }
     return 0;
 }

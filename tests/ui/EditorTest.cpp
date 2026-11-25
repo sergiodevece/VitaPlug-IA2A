@@ -72,11 +72,13 @@ int main(int argc,char** argv) {
         check(processor.snapshot().recording,"Sending a first request should arm capture");
         play(32000*12+256);
         const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(2);
-        while((processor.snapshot().busy || !processor.snapshot().hasClip) && std::chrono::steady_clock::now()<until)
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
-        juce::Timer::callPendingTimersSynchronously();
         auto& status=widget<juce::Label>(editor,"status");
-        check(status.getText()=="Falta un detalle","A clarification should be visible in the conversation");
+        while(status.getText()!="Falta un detalle" && std::chrono::steady_clock::now()<until) {
+            juce::Timer::callPendingTimersSynchronously();
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        if(status.getText()!="Falta un detalle")
+            throw std::runtime_error("Clarification missing: "+processor.snapshot().message.toStdString());
         check(!apply.isEnabled() && !after.isEnabled(),"A clarification cannot be applied or previewed");
         prompt.setText(juce::String::fromUTF8("Los platos están muy sucios."),true);
         send.onClick();

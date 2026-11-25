@@ -26,12 +26,22 @@ function matches(rule, value: unknown): boolean {
   }
 }
 function admissible(goal, channels:number) {
-  return (goal.allowLR || goal.allowMS) && !(goal.allowMS && channels===1) &&
+  const edits=goal.edits ?? [];
+  return (goal.priorities.length>0 || edits.length>0) &&
+    edits.every(edit => {
+      const global=['inputTrimDb','outputGainDb','enabled','midSide'].includes(edit.control);
+      if(global && edit.domain!=='both')return false;
+      const toggle=['hpfOn','enabled','midSide'].includes(edit.control);
+      if(toggle)return edit.change==='set' && (edit.value===0 || edit.value===1);
+      return edit.change==='set' ? edit.value!==undefined : edit.value===undefined || edit.value>0;
+    }) &&
+    (goal.allowLR || goal.allowMS) && !(goal.allowMS && channels===1) &&
     new Set(goal.priorities.map(p=>p.objective)).size === goal.priorities.length &&
     goal.priorities.every(p=>p.objective==='air' || p.intensity>=0);
 }
 export function validRequest(input): input is Turn {
-  return matches(defs.request,input) && (!input.previousGoal || admissible(input.previousGoal,2));
+  return matches(defs.request,input) && (!input.previousGoal || admissible(input.previousGoal,2)) &&
+    (input.auditioning!=='pending' || input.hasPending);
 }
 export function validResponse(reply, turn:Turn) {
   return matches(defs.response,reply) && reply.requestId===turn.requestId &&

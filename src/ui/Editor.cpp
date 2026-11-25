@@ -166,7 +166,8 @@ void Editor::refresh() {
     send.setTitle(sendText);
     send.setEnabled(!s.recording && !s.busy && (retry || !prompt.getText().trim().isEmpty()));
     const auto title= s.recording ? juce::String::fromUTF8("Escuchando la pista") : s.busy ? "Preparando la propuesta"
-        : s.turnFailed ? (s.pending ? "Propuesta anterior" : "Consulta fallida")
+        : s.usesPreviousProposal ? "Propuesta anterior"
+        : s.turnFailed ? "Consulta fallida"
         : s.pending ? "Propuesta para escuchar" : s.needsClarification ? "Falta un detalle"
         : s.hasClip ? "Fragmento preparado" : juce::String::fromUTF8("¿Qué quieres cambiar?");
     status.setText(title,juce::dontSendNotification);

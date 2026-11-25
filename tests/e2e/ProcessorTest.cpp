@@ -103,6 +103,35 @@ int main(int argc,char**) {
         require(after==restored && !reopened.snapshot().pending,"offline project recall");
         plugin.undo();juce::MemoryBlock undone;plugin.getStateInformation(undone);
         require(undone==before,"undo restores complete state");
+        if(demoMode) {
+            plugin.submit(juce::String::fromUTF8("quiero el umbral más bajo, que se note más la compresión y equilibra con el gain"));
+            waitForTurn();
+            if(!plugin.snapshot().canApply) throw std::runtime_error("direct proposal: "+plugin.snapshot().message.toStdString());
+            juce::MemoryBlock stillApplied;
+            plugin.getStateInformation(stillApplied);
+            require(stillApplied==undone,"a direct request must not apply automatically");
+
+            Processor directOnly(true);
+            directOnly.prepareToPlay(48000,512);
+            const auto waitForDirect = [&] {
+                const auto end=std::chrono::steady_clock::now()+std::chrono::seconds(2);
+                while(directOnly.snapshot().busy && std::chrono::steady_clock::now()<end)
+                    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                require(!directOnly.snapshot().hasClip && directOnly.snapshot().canApply,
+                    "an exact adjustment can be staged without a captured fragment");
+            };
+            directOnly.submit("Pon el umbral en -25 dB");
+            waitForDirect();
+            directOnly.listen(false,true);
+            directOnly.submit("Baja el umbral 3 dB");
+            waitForDirect();
+            directOnly.apply();
+            juce::MemoryBlock selected;
+            directOnly.getStateInformation(selected);
+            juce::MemoryInputStream data(selected,false);
+            data.skipNextBytes(20); // State header, flags and the two global gains.
+            require(data.readFloat()==-21.f,"a relative edit while listening to Before uses the applied threshold");
+        }
         plugin.captureAudio();plugin.releaseResources();
         require(!plugin.snapshot().hasClip&&!plugin.snapshot().pending,"invalidation on release");
         std::cout<<"ProcessorTest OK"<<std::endl;

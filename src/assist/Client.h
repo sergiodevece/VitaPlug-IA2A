@@ -14,12 +14,13 @@ namespace ia2a {
 struct Calibration;
 struct Features;
 struct Settings;
+juce::var encodeGoal(const Goal&);
 juce::var turnSettings(const Settings&,int channels);
 juce::var turnFeatures(const Features&);
 juce::var turnResult(const Calibration&);
 
 struct Turn {
-    juce::String requestId, source, prompt, sourceOrigin, lastAction;
+    juce::String requestId, source, prompt, sourceOrigin, lastAction, auditioning;
     int channels = 1;
     juce::StringArray history;
     juce::var features {new juce::DynamicObject}, previousGoal, appliedSettings, pendingSettings, previousResult;

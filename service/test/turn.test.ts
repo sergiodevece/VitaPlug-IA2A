@@ -125,3 +125,34 @@ test('a new source and a conversational follow-up carry measured dynamics and th
     goal:{...previousGoal,priorities:[{objective:'easeCompression',intensity:0.45}]}
   },turn),true);
 });
+
+test('explicit control commands work without musical priorities and retain their conversational context', () => {
+  const goal={
+    allowLR:true,allowMS:false,priorities:[],compensateGain:true,
+    edits:[{control:'thresholdDb',domain:'both',change:'decrease',value:3}]
+  };
+  const turn={...first,source:'drums',channels:2,prompt:'Baja el umbral tres decibelios y compensa con gain',
+    auditioning:'pending',hasPending:true,previousGoal:goal};
+  const response={version:1,requestId:turn.requestId,provider:'claude',kind:'goal',
+    text:'Bajaré el umbral y equilibraré el nivel de salida.',goal};
+  assert.equal(validRequest(turn),true);
+  assert.equal(validResponse(response,turn),true);
+  assert.equal(validRequest({...turn,hasPending:false}),false);
+  for(const edit of [
+    {...goal.edits[0],value:-3},
+    {...goal.edits[0],change:'set',value:undefined},
+    {...goal.edits[0],control:'unknown'},
+    {...goal.edits[0],control:'outputGainDb',domain:'side'},
+    {...goal.edits[0],control:'enabled',change:'increase',value:1},
+    {...goal.edits[0],control:'midSide',domain:'main',change:'set',value:1},
+    {...goal.edits[0],control:'hpfOn',change:'set',value:.5}
+  ]) assert.equal(validResponse({...response,goal:{...goal,edits:[edit]}},turn),false);
+  assert.equal(validResponse({...response,goal:{...goal,edits:[]} },turn),false);
+  const mono={...turn,channels:1};
+  assert.equal(validResponse({...response,goal:{...goal,allowMS:true}},mono),false);
+  assert.equal(validResponse({...response,goal:{...goal,edits:[
+    {control:'midSide',domain:'both',change:'set',value:1},
+    {control:'hpfOn',domain:'side',change:'set',value:1}]}},mono),true);
+  assert.equal(validResponse({...response,goal:{...goal,edits:[],priorities:[
+    {objective:'bassWeight',intensity:.7}]}},turn),true);
+});

@@ -3,6 +3,7 @@
 #include "calibration/Calibrator.h"
 #include "ui/Editor.h"
 #include "assist/TrackSource.h"
+#include "assist/DirectRequest.h"
 #include <algorithm>
 #include <cmath>
 
@@ -32,7 +33,7 @@ void Processor::invalidateLocked(bool resetConversation) {
         lastAction.clear();
         history.clear();
     }
-    busy=pendingSend=needsClarification=turnFailed=false; session.invalidate(); compare.publish(session.monitor());
+    busy=pendingSend=needsClarification=turnFailed=usesPreviousProposal=false; session.invalidate(); compare.publish(session.monitor());
     knownRevision=capture.revision(); monitorRevision.store(knownRevision);
 }
 void Processor::prepareToPlay(double hz,int maximum) {
@@ -118,28 +119,53 @@ void Processor::setReference(bool value) {
     reference=value;capture.invalidate();invalidateLocked();
     message=value?"Asigna el bus auxiliar de mezcla y pulsa Escuchar.":"Pulsa Escuchar para analizar solo la pista.";
 }
-void Processor::queueLocked() {
-    cancellation.request_stop();cancellation=std::stop_source{};
-    Job j; j.ticket=session.begin();j.clip=clip;j.seed=session.seed();j.applied=session.applied();
+void Processor::queueLocked(std::optional<Goal> direct) {
+    cancellation.request_stop();
+    cancellation=std::stop_source{};
+    Job j;
+    j.ticket=session.begin();
+    j.clip=clip;
+    j.captureRevision=capture.revision();
+    j.direct=std::move(direct);
+    const auto monitor=session.monitor();
+    j.applied=monitor.applied;
+    j.seed=monitor.preview?monitor.candidate:monitor.applied;
+    j.turn.auditioning=monitor.preview?"pending":"applied";
     j.turn.requestId=juce::Uuid().toString();
     j.turn.source=source=="auto"?inferredSource:source;
     j.turn.sourceOrigin=source!="auto"?"user":inferredSource!="other"?"host-name":"unknown";
     j.turn.prompt=prompt;
-    j.turn.channels=int(clip->track.size());j.turn.history=history;j.turn.previousGoal=previousGoal;
+    j.turn.channels=clip?int(clip->track.size()):std::clamp(getMainBusNumInputChannels(),1,2);
+    j.turn.history=history;
+    j.turn.previousGoal=previousGoal;
     j.turn.previousResult=previousResult;
     j.turn.lastAction=lastAction;
-    j.turn.hasApplied=j.applied.enabled;j.turn.hasPending=session.pending();j.stop=cancellation.get_token();
+    j.turn.hasApplied=j.applied!=Settings::transparent();
+    j.turn.hasPending=monitor.hasCandidate;
+    j.stop=cancellation.get_token();
     j.turn.appliedSettings=turnSettings(j.applied,j.turn.channels);
-    if(j.turn.hasPending)j.turn.pendingSettings=turnSettings(j.seed,j.turn.channels);
-    job=std::move(j);busy=true;pendingSend=needsClarification=turnFailed=false;message=juce::String::fromUTF8("Preparando una propuesta sobre tu pista…");wake.notify_one();
+    if(j.turn.hasPending)j.turn.pendingSettings=turnSettings(monitor.candidate,j.turn.channels);
+    job=std::move(j);
+    busy=true;
+    pendingSend=needsClarification=turnFailed=usesPreviousProposal=false;
+    message=juce::String::fromUTF8("Preparando una propuesta sobre tu pista…");
+    wake.notify_one();
 }
 void Processor::submit(juce::String text) {
-    text=text.trim().substring(0,500);if(text.isEmpty())return;
-    std::lock_guard lock(control);prompt=text;
-    if(!clip) {
-        if(capture.status()==Capture::Idle) armLocked();
-        pendingSend=true;message=juce::String::fromUTF8("Reproduce la pista. Al terminar la captura prepararé la propuesta.");
-    } else queueLocked();
+    text=text.trim().substring(0,500);
+    if(text.isEmpty()) return;
+    auto direct=directRequest(text);
+    std::lock_guard lock(control);
+    prompt=text;
+    const auto captureState=capture.status();
+    const bool capturing=captureState==Capture::Armed || captureState==Capture::Recording;
+    if(!clip && (!direct || direct->compensateGain || capturing)) {
+        if(captureState==Capture::Idle) armLocked();
+        pendingSend=true;
+        message=juce::String::fromUTF8("Reproduce la pista. Al terminar la captura prepararé la propuesta.");
+    } else {
+        queueLocked(std::move(direct));
+    }
 }
 void Processor::runWorker() {
     Client client(demoMode);
@@ -165,7 +191,7 @@ void Processor::runWorker() {
         if(capture.status()==Capture::Ready) {
             if(auto result=capture.take()) {
                 clip=std::make_shared<Clip>(std::move(*result));message=juce::String::fromUTF8("Fragmento listo. Describe el cambio que quieres oír.");
-                if(pendingSend)queueLocked();
+                if(pendingSend)queueLocked(directRequest(prompt));
             }
         }
         if(!job)continue;
@@ -173,37 +199,64 @@ void Processor::runWorker() {
         ClientReply reply;
         Calibration calibration;
         juce::String explanation;
-        bool usable=false;
+        bool attempted=false;
         try {
-            auto f=analyse(*j.clip); usable=f.usable;
-            if(!usable) explanation=juce::String::fromUTF8("La pista tiene poca señal útil. Captura un fragmento con voz o golpes.");
-            else {
-                j.turn.features=turnFeatures(f);
-                reply=client.request(j.turn,j.stop);
-                explanation=reply.text;
-                if(reply.kind==ClientReply::Kind::goal && !j.stop.stop_requested()) {
-                    calibration=calibrate(*j.clip,j.applied,j.seed,reply.goal,j.stop);
-                    explanation=juce::String::fromUTF8(calibration.explanation.c_str());
-                    if(reply.provider=="claude" && calibration.outcome==Outcome::Candidate)
-                        explanation=reply.text;
+            if(j.direct) {
+                Clip empty;
+                empty.track.resize(static_cast<size_t>(j.turn.channels));
+                attempted=true;
+                reply.kind=ClientReply::Kind::goal;
+                reply.goal=*j.direct;
+                reply.wireGoal=encodeGoal(reply.goal);
+                calibration=calibrate(j.clip?*j.clip:empty,j.applied,j.seed,reply.goal,j.stop);
+                explanation=juce::String::fromUTF8(calibration.explanation.c_str());
+            } else if(j.clip) {
+                auto features=analyse(*j.clip);
+                attempted=features.usable;
+                if(!attempted) explanation=juce::String::fromUTF8("Reproduce un fragmento con señal para analizar el cambio que pides.");
+                else {
+                    j.turn.features=turnFeatures(features);
+                    reply=client.request(j.turn,j.stop);
+                    explanation=reply.text;
+                    if(reply.kind==ClientReply::Kind::goal && !j.stop.stop_requested()) {
+                        calibration=calibrate(*j.clip,j.applied,j.seed,reply.goal,j.stop);
+                        explanation=juce::String::fromUTF8(calibration.explanation.c_str());
+                        const bool reportsActualControls=!reply.goal.edits.empty() || reply.goal.compensateGain ||
+                            std::any_of(reply.goal.priorities.begin(),reply.goal.priorities.end(),[](Priority priority) {
+                                return priority.objective==Objective::BassWeight;
+                            });
+                        if(reply.provider=="claude" && calibration.outcome==Outcome::Candidate && !reportsActualControls)
+                            explanation=reply.text;
+                    }
+                    if(!features.hasReferenceSignal && !j.clip->reference.empty())
+                        explanation+=juce::String::fromUTF8(" · Referencia en silencio. Se ha analizado solo la pista.");
                 }
-                if(!f.hasReferenceSignal && !j.clip->reference.empty())
-                    explanation+=juce::String::fromUTF8(" · Referencia en silencio. Se ha analizado solo la pista.");
             }
-        } catch(const std::exception&) {explanation="No se pudo preparar el ajuste. Puedes volver a pedirlo.";}
+        } catch(const std::exception&) {
+            attempted=true;
+            reply.kind=ClientReply::Kind::error;
+            explanation=juce::String::fromUTF8("IA2A no pudo preparar este ajuste. Puedes reintentarlo con la misma petición.");
+        }
         lock.lock();
-        if(j.stop.stop_requested()||!session.current(j.ticket)||j.clip->generation!=capture.revision())continue;
-        if(reference&&j.clip->reference.empty())explanation+=juce::String::fromUTF8(" · Sin entrada de referencia. Análisis de la pista sola.");
-        if(reply.kind==ClientReply::Kind::goal && calibration.outcome==Outcome::Candidate) {
-            session.offer(j.ticket,calibration.settings,calibration.matchGainDb);
+        if(j.stop.stop_requested()||!session.current(j.ticket)||j.captureRevision!=capture.revision())continue;
+        if(reference&&j.clip&&j.clip->reference.empty())explanation+=juce::String::fromUTF8(" · Sin entrada de referencia. Análisis de la pista sola.");
+        const bool candidate=reply.kind==ClientReply::Kind::goal && calibration.outcome==Outcome::Candidate;
+        if(candidate && session.offer(j.ticket,calibration.settings,calibration.matchGainDb)) {
             lastAction.clear();
             auto monitor=session.monitor();session.listen(monitor.preview,matched);
-        } else session.finish(j.ticket);
+        } else {
+            if(candidate) {
+                reply.kind=ClientReply::Kind::error;
+                explanation=juce::String::fromUTF8("IA2A no pudo preparar los valores de este ajuste. Puedes reintentar la consulta.");
+            }
+            session.finish(j.ticket);
+            usesPreviousProposal=session.pending();
+        }
         if(reply.kind==ClientReply::Kind::goal) {
             previousGoal=reply.wireGoal;
             previousResult=turnResult(calibration);
         }
-        if(usable && (reply.kind==ClientReply::Kind::goal||reply.kind==ClientReply::Kind::question||reply.kind==ClientReply::Kind::keep)){
+        if(attempted && (reply.kind==ClientReply::Kind::goal||reply.kind==ClientReply::Kind::question||reply.kind==ClientReply::Kind::keep)){
             history.add(j.turn.prompt.substring(0,400));
             history.add(explanation.substring(0,400));
             auto historyBytes = [&] {
@@ -218,7 +271,7 @@ void Processor::runWorker() {
         }
         needsClarification=reply.kind==ClientReply::Kind::question ||
             (reply.kind==ClientReply::Kind::goal && calibration.outcome==Outcome::Clarify);
-        turnFailed=usable && reply.kind==ClientReply::Kind::error;
+        turnFailed=attempted && reply.kind==ClientReply::Kind::error;
         busy=false;message=explanation;if(reply.provider.isNotEmpty())provider=reply.provider;compare.publish(session.monitor());
     }
 }
@@ -227,14 +280,14 @@ void Processor::listen(bool preview,bool levelMatched) {
 }
 void Processor::apply() {
     std::lock_guard lock(control);
-    if(session.apply()) {needsClarification=turnFailed=false;lastAction="applied";message="Ajuste aplicado.";compare.publish(session.monitor());}
+    if(session.apply()) {needsClarification=turnFailed=usesPreviousProposal=false;lastAction="applied";message="Ajuste aplicado.";compare.publish(session.monitor());}
 }
 void Processor::discard() {
     std::lock_guard lock(control);cancellation.request_stop();job.reset();busy=false;pendingSend=false;
-    session.discard();needsClarification=turnFailed=false;lastAction="discarded";message="Propuesta descartada.";compare.publish(session.monitor());
+    session.discard();needsClarification=turnFailed=usesPreviousProposal=false;lastAction="discarded";message="Propuesta descartada.";compare.publish(session.monitor());
 }
 void Processor::undo() {
-    std::lock_guard lock(control);if(session.undo()){cancellation.request_stop();job.reset();busy=needsClarification=turnFailed=false;
+    std::lock_guard lock(control);if(session.undo()){cancellation.request_stop();job.reset();busy=needsClarification=turnFailed=usesPreviousProposal=false;
         lastAction="undone";message="Has recuperado el ajuste anterior.";compare.publish(session.monitor());}
 }
 Snapshot Processor::snapshot() const {
@@ -242,7 +295,7 @@ Snapshot Processor::snapshot() const {
     s.source=source;s.effectiveSource=source=="auto"?inferredSource:source;s.trackName=trackName;s.prompt=prompt;s.message=message;s.provider=provider;s.reference=reference;
     s.auxActive=auxActive;s.recording=capture.status()==Capture::Armed||capture.status()==Capture::Recording;
     s.progress=capture.progress();s.busy=busy;s.pending=session.pending();s.canApply=session.canApply();
-    s.needsClarification=needsClarification;s.turnFailed=turnFailed;
+    s.needsClarification=needsClarification;s.turnFailed=turnFailed;s.usesPreviousProposal=usesPreviousProposal;
     s.canUndo=session.canUndo();s.preview=session.monitor().preview;s.matched=matched;s.hasClip=bool(clip);
     s.channels=channels;s.midSide=ms;s.inputDb=meterIn;s.outputDb=meterOut;s.reductionDb=meterGr;
     const int end=head.load(),length=historySize.load();

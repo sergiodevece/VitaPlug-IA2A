@@ -30,9 +30,11 @@ Features analyse(const Clip& clip) {
     const int windowSize=static_cast<int>(std::lround(.020*clip.sampleRate));
     const bool stereo=clip.track.size()==2;
     const double filter=std::exp(-6.283185307179586*std::min(4000.,clip.sampleRate*.35)/clip.sampleRate);
+    const double bassStep = 1.0 - std::exp(-6.283185307179586*250.0/clip.sampleRate);
     std::vector<Window> windows;
     windows.reserve(frames/windowSize+1);
     double lowMid=0,lowSide=0,sumMid=0,sumSide=0,sumMidHigh=0,sumSideHigh=0,peak=0;
+    double bassMid=0,bassSide=0,sumBass=0;
     size_t clipped=0;
     Window w{};
     const size_t first=clip.prerollSamples;
@@ -42,7 +44,10 @@ Features analyse(const Clip& clip) {
         const double mid=(left+right)*.5, side=(left-right)*.5;
         lowMid+=(1-filter)*(mid-lowMid);
         lowSide+=(1-filter)*(side-lowSide);
+        bassMid+=bassStep*(mid-bassMid);
+        bassSide+=bassStep*(side-bassSide);
         if(n<first) continue;
+        sumBass+=bassMid*bassMid+bassSide*bassSide;
         const double midPower=mid*mid, sidePower=side*side;
         const double midHigh=(mid-lowMid)*(mid-lowMid), sideHigh=(side-lowSide)*(side-lowSide);
         const double samplePeak=std::max(std::abs(left),std::abs(right));
@@ -68,6 +73,7 @@ Features analyse(const Clip& clip) {
     out.clippedFraction=static_cast<float>(clipped/count);
     out.peakDb=powerDb(peak*peak); out.rmsDb=powerDb((sumMid+sumSide)/count);
     out.crestDb=out.peakDb-out.rmsDb; out.highRatioDb=powerDb((sumMidHigh+sumSideHigh)/std::max(1.e-12,sumMid+sumSide));
+    out.lowRatioDb=powerDb(sumBass/std::max(1.e-12,sumMid+sumSide));
     out.monoFoldDb=powerDb(sumMid/std::max(1.e-12,sumMid+sumSide));
     // Relative audition level: gated energy with extra weight for the high band.
     double gated=0,attack=0,decay=0,coRef=0,coTrack=0,tailSide=0,tailMid=0;

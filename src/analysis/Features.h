@@ -12,6 +12,7 @@ struct Features {
     float sideTailRatioDb = -120, highPulseCorrelation = 0, monoFoldDb = 0;
     float referenceContrastDb = 0, referenceOverlap = 0, clippedFraction = 0;
     float monitorDb = -120;
+    float lowRatioDb = -120; // Energy near and below 250 Hz relative to full-band energy.
 };
 Features analyse(const Clip&);
 }

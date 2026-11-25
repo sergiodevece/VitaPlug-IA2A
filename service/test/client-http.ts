@@ -53,9 +53,31 @@ const model=createServer(async(req,res)=>{
   const turn=JSON.parse(request.messages[useClaude?0:1].content);
   let reply;
   try {
-    reply=useClaude && turn.requestId.startsWith('native-chat-')
-      ? conversationReply(turn,req,request.system)
-      : await demoProvider(turn,new AbortController().signal);
+    if(useClaude && turn.requestId==='native-controls-2') {
+      assert.equal(turn.features.lowRatioDb,-6);
+      assert.ok(request.system.includes('filters only the detector'));
+      reply={kind:'goal',text:'Probaré a preservar el peso del grave.',
+        goal:{allowLR:true,allowMS:false,priorities:[{objective:'bassWeight',intensity:.7}]}};
+    } else if(useClaude && turn.requestId==='native-controls-1') {
+      assert.equal(turn.auditioning,'pending');
+      assert.equal(turn.pendingSettings.mid.attackMs,10);
+      assert.equal(turn.pendingSettings.mid.hpfOn,false);
+      assert.deepEqual(turn.previousGoal,{
+        allowLR:true,allowMS:false,priorities:[],
+        edits:[{control:'thresholdDb',domain:'both',change:'decrease',value:3}],
+        compensateGain:true
+      });
+      assert.ok(request.system.includes('The user has final say'));
+      reply={kind:'goal',text:'Fijaré el umbral y subiré el aire.',
+        goal:{allowLR:true,allowMS:false,priorities:[],compensateGain:true,
+          edits:[{control:'thresholdDb',domain:'both',change:'set',value:-32.5},
+            {control:'airDb',domain:'both',change:'increase',value:null},
+            {control:'hpfOn',domain:'main',change:'set',value:1}]}};
+    } else {
+      reply=useClaude && turn.requestId.startsWith('native-chat-')
+        ? conversationReply(turn,req,request.system)
+        : await demoProvider(turn,new AbortController().signal);
+    }
   } catch(error) {
     console.error(error);
     res.writeHead(422).end();

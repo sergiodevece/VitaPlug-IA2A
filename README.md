@@ -10,6 +10,8 @@ Prototipo de compresor óptico conversacional para macOS. El frontal A reúne la
 
 Conectar [el servicio de conversación](service/README.md) para interpretar peticiones libres. El modelo recibe un resumen de la pista con nivel, transitorios, colas y balance estéreo. Si identificar la fuente cambiaría la propuesta, puede preguntarlo. Las respuestas y peticiones sucesivas conservan el contexto reciente mientras el calibrador prueba los ajustes con el DSP óptico sobre el audio real.
 
+También puedes pedir un control directamente en la conversación, por ejemplo «baja el umbral 3 dB y compensa la salida». IA2A prepara el cambio desde la versión que estés escuchando. Puedes compararlo, pedir otra variación o confirmarlo con **Aplicar**.
+
 ## Compilar y probar
 
 En macOS con CMake, compilador C++20 y JUCE 9.0.2 (revisión `72782788ce18c2d4d760b28e0921d6ffc6431102`):
