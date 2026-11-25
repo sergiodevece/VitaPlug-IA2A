@@ -119,6 +119,32 @@
     },
     {
       "any": [
+        "más presencia",
+        "mas presencia",
+        "dar presencia",
+        "primer plano"
+      ],
+      "answer": {
+        "kind": "goal",
+        "text": "Probaré a darle más presencia conservando el ataque.",
+        "goal": {
+          "allowLR": true,
+          "allowMS": false,
+          "priorities": [
+            {
+              "objective": "bringForward",
+              "intensity": 0.55
+            },
+            {
+              "objective": "preserveAttack",
+              "intensity": 0.75
+            }
+          ]
+        }
+      }
+    },
+    {
+      "any": [
         "estable",
         "saltos",
         "disparej",

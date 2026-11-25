@@ -65,12 +65,21 @@ int main(int argc,char** argv) {
             }
             throw std::runtime_error("Timed out waiting for proposal: "+processor.snapshot().message.toStdString());
         };
-        prompt.setText(juce::String::fromUTF8("Los platos están muy sucios."),true);
+        prompt.setText("Quiero un cambio.",true);
         check(prompt.onReturnKey!=nullptr && send.onClick!=nullptr,"Enter or Send is missing");
         send.onClick();
         check(!apply.isEnabled(),"Sending without audio enabled Apply");
         check(processor.snapshot().recording,"Sending a first request should arm capture");
         play(32000*12+256);
+        const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(2);
+        while((processor.snapshot().busy || !processor.snapshot().hasClip) && std::chrono::steady_clock::now()<until)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        juce::Timer::callPendingTimersSynchronously();
+        auto& status=widget<juce::Label>(editor,"status");
+        check(status.getText()=="Falta un detalle","A clarification should be visible in the conversation");
+        check(!apply.isEnabled() && !after.isEnabled(),"A clarification cannot be applied or previewed");
+        prompt.setText(juce::String::fromUTF8("Los platos están muy sucios."),true);
+        send.onClick();
         awaitProposal();
         before.onClick(); check(!processor.snapshot().preview,"Before did not select the approved path");
         after.onClick(); check(processor.snapshot().preview,"After did not select the proposal");

@@ -111,5 +111,25 @@
       "hasPending": false
     },
     "expectedKind": "keep"
+  },
+  {
+    "name": "drums-presence",
+    "request": {
+      "version": 1,
+      "requestId": "case-drums-presence",
+      "source": "drums",
+      "channels": 2,
+      "prompt": "más presencia",
+      "history": [],
+      "features": {
+        "usable": true,
+        "phraseSpreadDb": 9,
+        "peakDb": -4
+      },
+      "previousGoal": null,
+      "hasApplied": false,
+      "hasPending": false
+    },
+    "expectedKind": "goal"
   }
 ]

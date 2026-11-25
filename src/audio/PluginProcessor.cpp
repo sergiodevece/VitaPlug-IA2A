@@ -25,7 +25,7 @@ bool Processor::isBusesLayoutSupported(const BusesLayout& l) const {
 }
 void Processor::invalidateLocked() {
     cancellation.request_stop(); job.reset(); clip.reset(); previousGoal=juce::var{}; history.clear();
-    busy=pendingSend=false; session.invalidate(); compare.publish(session.monitor());
+    busy=pendingSend=needsClarification=false; session.invalidate(); compare.publish(session.monitor());
     knownRevision=capture.revision(); monitorRevision.store(knownRevision);
 }
 void Processor::prepareToPlay(double hz,int maximum) {
@@ -105,7 +105,7 @@ void Processor::queueLocked() {
     j.turn.hasApplied=j.applied.enabled;j.turn.hasPending=session.pending();j.stop=cancellation.get_token();
     j.turn.appliedSettings=turnSettings(j.applied,j.turn.channels);
     if(j.turn.hasPending)j.turn.pendingSettings=turnSettings(j.seed,j.turn.channels);
-    job=std::move(j);busy=true;pendingSend=false;message=juce::String::fromUTF8("Preparando una propuesta sobre tu pista…");wake.notify_one();
+    job=std::move(j);busy=true;pendingSend=needsClarification=false;message=juce::String::fromUTF8("Preparando una propuesta sobre tu pista…");wake.notify_one();
 }
 void Processor::submit(juce::String text) {
     text=text.trim().substring(0,500);if(text.isEmpty())return;
@@ -177,6 +177,8 @@ void Processor::runWorker() {
             history.add(j.turn.prompt.substring(0,220));history.add(explanation.substring(0,220));
             while(history.size()>4)history.remove(0);
         }
+        needsClarification=reply.kind==ClientReply::Kind::question ||
+            (reply.kind==ClientReply::Kind::goal && calibration.outcome==Outcome::Clarify);
         busy=false;message=explanation;if(reply.provider.isNotEmpty())provider=reply.provider;compare.publish(session.monitor());
     }
 }
@@ -185,14 +187,14 @@ void Processor::listen(bool preview,bool levelMatched) {
 }
 void Processor::apply() {
     std::lock_guard lock(control);
-    if(session.apply()) {previousGoal=juce::var{};history.clear();message="Ajuste aplicado.";compare.publish(session.monitor());}
+    if(session.apply()) {needsClarification=false;previousGoal=juce::var{};history.clear();message="Ajuste aplicado.";compare.publish(session.monitor());}
 }
 void Processor::discard() {
     std::lock_guard lock(control);cancellation.request_stop();job.reset();busy=false;pendingSend=false;
-    session.discard();previousGoal=juce::var{};history.clear();message="Propuesta descartada.";compare.publish(session.monitor());
+    session.discard();needsClarification=false;previousGoal=juce::var{};history.clear();message="Propuesta descartada.";compare.publish(session.monitor());
 }
 void Processor::undo() {
-    std::lock_guard lock(control);if(session.undo()){cancellation.request_stop();job.reset();busy=false;
+    std::lock_guard lock(control);if(session.undo()){cancellation.request_stop();job.reset();busy=needsClarification=false;
         previousGoal=juce::var{};history.clear();message="Has recuperado el ajuste anterior.";compare.publish(session.monitor());}
 }
 Snapshot Processor::snapshot() const {
@@ -200,6 +202,7 @@ Snapshot Processor::snapshot() const {
     s.source=source;s.prompt=prompt;s.message=message;s.provider=provider;s.reference=reference;
     s.auxActive=auxActive;s.recording=capture.status()==Capture::Armed||capture.status()==Capture::Recording;
     s.progress=capture.progress();s.busy=busy;s.pending=session.pending();s.canApply=session.canApply();
+    s.needsClarification=needsClarification;
     s.canUndo=session.canUndo();s.preview=session.monitor().preview;s.matched=matched;s.hasClip=bool(clip);
     s.channels=channels;s.midSide=ms;s.inputDb=meterIn;s.outputDb=meterOut;s.reductionDb=meterGr;
     const int end=head.load(),length=historySize.load();

@@ -138,7 +138,8 @@ void Editor::refresh() {
     apply.setColour(juce::TextButton::textColourOffId,s.canApply?Colour(0xff2c190d):cream);
     capture.setButtonText(s.recording?"Cancelar":"Escuchar"); send.setEnabled(!s.recording&&!s.busy&&!prompt.isEmpty());
     const auto title= s.recording ? juce::String::fromUTF8("Escuchando la pista") : s.busy ? "Preparando la propuesta"
-        : s.pending ? "Propuesta para escuchar" : s.hasClip ? "Fragmento preparado" : juce::String::fromUTF8("¿Qué quieres cambiar?");
+        : s.pending ? "Propuesta para escuchar" : s.needsClarification ? "Falta un detalle"
+        : s.hasClip ? "Fragmento preparado" : juce::String::fromUTF8("¿Qué quieres cambiar?");
     status.setText(title,juce::dontSendNotification);
     request.setText(s.prompt.isEmpty()?juce::String():juce::String::fromUTF8("“")+s.prompt+juce::String::fromUTF8("”"),juce::dontSendNotification);
     response.setText(s.message.isEmpty()?juce::String::fromUTF8("Reproduce un fragmento en tu DAW y pulsa Escuchar."):s.message,juce::dontSendNotification);
