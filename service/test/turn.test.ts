@@ -41,7 +41,10 @@ test('HTTP service authenticates clients, bounds requests and validates the HTTP
   assert.equal((await send({...first,pcm:[]})).status,400);
   const valid=await send(first);assert.equal(valid.status,200);assert.equal((await valid.json()).requestId,first.requestId);
   assert.deepEqual(modelInput,first);
-  invalid=true;assert.equal((await send(first)).status,502);
+  invalid=true;
+  const rejected=await send(first);
+  assert.equal(rejected.status,502);
+  assert.deepEqual(await rejected.json(),{code:'provider-response'});
 });
 
 test('Claude Messages receives only the turn and returns validated goals and clarifications', async t => {
@@ -84,7 +87,9 @@ test('Claude Messages receives only the turn and returns validated goals and cla
   assert.equal(question.status,200);
   assert.equal((await question.json()).goal,undefined);
   answer={kind:'goal',text:'Una propuesta inválida.',goal:null};
-  assert.equal((await send()).status,502);
+  const rejected=await send();
+  assert.equal(rejected.status,502);
+  assert.deepEqual(await rejected.json(),{code:'provider-response'});
 
   async function listen(server) {
     server.listen(0,'127.0.0.1');

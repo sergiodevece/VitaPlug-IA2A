@@ -1,4 +1,5 @@
 #include "audio/PluginProcessor.h"
+#include "ui/Editor.h"
 #include "tests/fixtures/Signals.h"
 #include <chrono>
 #include <iostream>
@@ -65,6 +66,23 @@ int main(int argc,char**) {
         auto s=plugin.snapshot();
         std::cout<<s.provider<<" · "<<s.message<<std::endl;
         require(s.canApply&&s.preview,"candidate ready");
+        if(!demoMode) {
+            plugin.submit("Controla el ataque del transitorio");
+            waitForTurn();
+            const auto failed=plugin.snapshot();
+            require(failed.turnFailed && failed.provider=="claude" && failed.canApply,
+                "a failed refinement must keep the connection identity and the previous proposal");
+            Editor editor(plugin);
+            auto* retry=dynamic_cast<juce::TextButton*>(editor.findChildWithID("send"));
+            auto* title=dynamic_cast<juce::Label*>(editor.findChildWithID("status"));
+            require(retry && retry->isEnabled() && retry->getButtonText()=="Reintentar",
+                "failed turn must expose a retry in the editor");
+            require(title && title->getText()=="Propuesta anterior","editor must identify the previous proposal");
+            retry->onClick();
+            waitForTurn();
+            require(!plugin.snapshot().turnFailed && plugin.snapshot().canApply,
+                "retry must restore the conversation without losing the previous proposal");
+        }
         juce::MemoryBlock before,after;plugin.getStateInformation(before);
         plugin.listen(false,true);process(false);plugin.listen(true,false);
         for(int n=0;n<50;++n)process(false);

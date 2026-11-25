@@ -32,7 +32,7 @@ void Processor::invalidateLocked(bool resetConversation) {
         lastAction.clear();
         history.clear();
     }
-    busy=pendingSend=needsClarification=false; session.invalidate(); compare.publish(session.monitor());
+    busy=pendingSend=needsClarification=turnFailed=false; session.invalidate(); compare.publish(session.monitor());
     knownRevision=capture.revision(); monitorRevision.store(knownRevision);
 }
 void Processor::prepareToPlay(double hz,int maximum) {
@@ -131,7 +131,7 @@ void Processor::queueLocked() {
     j.turn.hasApplied=j.applied.enabled;j.turn.hasPending=session.pending();j.stop=cancellation.get_token();
     j.turn.appliedSettings=turnSettings(j.applied,j.turn.channels);
     if(j.turn.hasPending)j.turn.pendingSettings=turnSettings(j.seed,j.turn.channels);
-    job=std::move(j);busy=true;pendingSend=needsClarification=false;message=juce::String::fromUTF8("Preparando una propuesta sobre tu pista…");wake.notify_one();
+    job=std::move(j);busy=true;pendingSend=needsClarification=turnFailed=false;message=juce::String::fromUTF8("Preparando una propuesta sobre tu pista…");wake.notify_one();
 }
 void Processor::submit(juce::String text) {
     text=text.trim().substring(0,500);if(text.isEmpty())return;
@@ -218,6 +218,7 @@ void Processor::runWorker() {
         }
         needsClarification=reply.kind==ClientReply::Kind::question ||
             (reply.kind==ClientReply::Kind::goal && calibration.outcome==Outcome::Clarify);
+        turnFailed=usable && reply.kind==ClientReply::Kind::error;
         busy=false;message=explanation;if(reply.provider.isNotEmpty())provider=reply.provider;compare.publish(session.monitor());
     }
 }
@@ -226,14 +227,14 @@ void Processor::listen(bool preview,bool levelMatched) {
 }
 void Processor::apply() {
     std::lock_guard lock(control);
-    if(session.apply()) {needsClarification=false;lastAction="applied";message="Ajuste aplicado.";compare.publish(session.monitor());}
+    if(session.apply()) {needsClarification=turnFailed=false;lastAction="applied";message="Ajuste aplicado.";compare.publish(session.monitor());}
 }
 void Processor::discard() {
     std::lock_guard lock(control);cancellation.request_stop();job.reset();busy=false;pendingSend=false;
-    session.discard();needsClarification=false;lastAction="discarded";message="Propuesta descartada.";compare.publish(session.monitor());
+    session.discard();needsClarification=turnFailed=false;lastAction="discarded";message="Propuesta descartada.";compare.publish(session.monitor());
 }
 void Processor::undo() {
-    std::lock_guard lock(control);if(session.undo()){cancellation.request_stop();job.reset();busy=needsClarification=false;
+    std::lock_guard lock(control);if(session.undo()){cancellation.request_stop();job.reset();busy=needsClarification=turnFailed=false;
         lastAction="undone";message="Has recuperado el ajuste anterior.";compare.publish(session.monitor());}
 }
 Snapshot Processor::snapshot() const {
@@ -241,7 +242,7 @@ Snapshot Processor::snapshot() const {
     s.source=source;s.effectiveSource=source=="auto"?inferredSource:source;s.trackName=trackName;s.prompt=prompt;s.message=message;s.provider=provider;s.reference=reference;
     s.auxActive=auxActive;s.recording=capture.status()==Capture::Armed||capture.status()==Capture::Recording;
     s.progress=capture.progress();s.busy=busy;s.pending=session.pending();s.canApply=session.canApply();
-    s.needsClarification=needsClarification;
+    s.needsClarification=needsClarification;s.turnFailed=turnFailed;
     s.canUndo=session.canUndo();s.preview=session.monitor().preview;s.matched=matched;s.hasClip=bool(clip);
     s.channels=channels;s.midSide=ms;s.inputDb=meterIn;s.outputDb=meterOut;s.reductionDb=meterGr;
     const int end=head.load(),length=historySize.load();

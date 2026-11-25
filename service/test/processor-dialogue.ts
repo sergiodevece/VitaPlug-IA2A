@@ -20,6 +20,10 @@ const server=createTurnServer({name:'claude',token,provider:async turn=>{
         allowLR:true,allowMS:false,
         priorities:[{objective:'stabilise',intensity:1},{objective:'bringForward',intensity:0.8}]
       }};
+    case 3:
+      throw new Error('mock upstream temporarily failed');
+    case 4:
+      return {kind:'keep',text:'Conserva la propuesta anterior.'};
     default:
       return {kind:'keep',text:'Conserva el ajuste aplicado en la voz.'};
   }
@@ -36,8 +40,12 @@ try {
   });
   const [code]=await once(child,'exit');
   assert.equal(code,0);
-  assert.equal(requests.length,3);
-  const [first,second,third]=requests;
+  assert.equal(requests.length,5);
+  const [first,second,failed,retried,third]=requests;
+  assert.equal(failed.prompt,retried.prompt);
+  assert.deepEqual(failed.history,retried.history);
+  assert.deepEqual(failed.previousResult,retried.previousResult);
+  assert.equal(failed.hasPending,true);
   assert.equal(first.sourceOrigin,'unknown');
   assert.equal(first.source,'other');
   assert.equal(first.features.usable,true);

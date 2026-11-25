@@ -121,7 +121,12 @@ var demoResponse(const Turn& t) {
     return answer;
 }
 
-var post(const String& url,const String& token,const String& body,std::stop_token stop) {
+struct TurnResponse {
+    int status = 0;
+    var data;
+};
+
+TurnResponse post(const String& url,const String& token,const String& body,std::stop_token stop) {
     juce::WebInputStream stream(juce::URL(url).withPOSTData(body),true);
     String headers="Content-Type: application/json\r\n";
     if(token.isNotEmpty()) headers+="Authorization: Bearer "+token+"\r\n";
@@ -129,21 +134,28 @@ var post(const String& url,const String& token,const String& body,std::stop_toke
     std::stop_callback interrupt(stop,[&]{stream.cancel();});
     std::mutex timerMutex;
     std::condition_variable_any timer;
+    std::atomic<bool> timedOut{false};
     std::jthread deadline([&](std::stop_token finished){
         std::unique_lock lock(timerMutex);
         timer.wait_for(lock,finished,30s,[]{return false;});
-        if(!finished.stop_requested())stream.cancel();
+        if(!finished.stop_requested()) {
+            timedOut=true;
+            stream.cancel();
+        }
     });
-    if(stop.stop_requested() || !stream.connect(nullptr) || stream.getStatusCode()!=200) return {};
+    if(stop.stop_requested()) return {};
+    if(!stream.connect(nullptr))
+        return {timedOut?504:std::max(0,stream.getStatusCode()),{}};
+    auto status=stream.getStatusCode();
     juce::MemoryOutputStream out;
     std::array<char,1024> chunk{};
     while(!stop.stop_requested() && !stream.isExhausted()) {
         const auto n=stream.read(chunk.data(),static_cast<int>(chunk.size()));
         if(n<=0) break;
-        if(out.getDataSize()+static_cast<size_t>(n)>16384)return {};
+        if(out.getDataSize()+static_cast<size_t>(n)>16384)return {status,{}};
         out.write(chunk.data(),static_cast<size_t>(n));
     }
-    return juce::JSON::parse(out.toUTF8());
+    return {timedOut?504:status,juce::JSON::parse(out.toUTF8())};
 }
 
 ClientReply failure(const Turn& t, bool cancelled=false) {
@@ -153,6 +165,31 @@ ClientReply failure(const Turn& t, bool cancelled=false) {
     out.text=cancelled?String::fromUTF8("Petición cancelada."):String::fromUTF8("No se pudo obtener una respuesta válida del asistente.");
     return out;
 }
+
+ClientReply conversationFailure(const Turn& turn, const TurnResponse& response) {
+    auto result=failure(turn);
+    const auto code=response.data["code"].toString();
+    const char* text = "El servicio no pudo completar este turno. Puedes reintentarlo.";
+    if(response.status==0) {
+        result.provider="disconnected";
+        text="No responde el servicio local. Comprueba que el iniciador siga abierto en Terminal.";
+    } else if(response.status==504) {
+        text="Se agotó el tiempo de espera. Puedes reintentar la consulta.";
+    } else if(response.status==429 || code=="provider-rate-limit") {
+        text="El servicio ha alcanzado el límite de peticiones. Espera un momento y vuelve a intentarlo.";
+    } else if(response.status==401) {
+        text="El servicio local rechazó la conexión. Reinicia el iniciador de IA2A.";
+    } else if(code=="provider-auth") {
+        text="Claude rechazó la clave o el acceso al modelo. Comprueba la configuración en Terminal.";
+    } else if(code=="provider-response" || response.status==200) {
+        text="La respuesta no contenía una propuesta válida. Puedes reintentar sin volver a capturar.";
+    } else if(response.status==400 || response.status==413) {
+        text="El servicio rechazó los datos de este turno. En Terminal aparece el motivo técnico.";
+    }
+    result.text=String::fromUTF8(text);
+    return result;
+}
+
 }
 
 juce::var turnSettings(const Settings& settings,int channels) {
@@ -222,22 +259,18 @@ ClientReply Client::request(const Turn& t,std::stop_token stop) const {
         endpoint=local->turnUrl;
         token=local->token;
     }
-    auto reply=endpoint.isEmpty()?demoResponse(t):post(endpoint,token,body,stop);
+    const auto response=endpoint.isEmpty()?TurnResponse{200,demoResponse(t)}:post(endpoint,token,body,stop);
     if(stop.stop_requested())return failure(t,true);
-    if(!matches(definitions()["response"],reply) || reply["requestId"].toString()!=t.requestId) {
-        auto result=failure(t);
-        if(usePublishedConnection) {
-            result.provider="disconnected";
-            result.text=String::fromUTF8("El servicio no pudo completar la consulta. Comprueba la ventana de Terminal y vuelve a enviar.");
-        }
-        return result;
-    }
+    if(response.status!=200)return conversationFailure(t,response);
+    const auto& reply=response.data;
+    if(!matches(definitions()["response"],reply) || reply["requestId"].toString()!=t.requestId)
+        return conversationFailure(t,response);
     ClientReply out;
     out.requestId=t.requestId; out.provider=reply["provider"].toString(); out.text=reply["text"].toString();
     const auto kind=reply["kind"].toString();
     if(kind=="goal") {
         auto goal=decodeGoal(reply["goal"],t.source,t.channels);
-        if(!goal)return failure(t);
+        if(!goal)return conversationFailure(t,response);
         out.kind=ClientReply::Kind::goal; out.goal=std::move(*goal);out.wireGoal=reply["goal"];
     } else out.kind=kind=="keep"?ClientReply::Kind::keep:ClientReply::Kind::question;
     return out;

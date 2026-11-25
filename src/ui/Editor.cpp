@@ -127,7 +127,11 @@ Editor::Editor(Processor& proc) : AudioProcessorEditor(proc), processor(proc) {
 Editor::~Editor() { stopTimer(); setLookAndFeel(nullptr); }
 
 void Editor::submitPrompt() {
-    const auto words=prompt.getText().trim();
+    auto words=prompt.getText().trim();
+    if(words.isEmpty()) {
+        const auto state=processor.snapshot();
+        if(state.turnFailed) words=state.prompt;
+    }
     if(words.isEmpty()) return;
     processor.submit(words);
     prompt.clear();
@@ -155,8 +159,14 @@ void Editor::refresh() {
     before.setToggleState(!s.preview,juce::dontSendNotification); after.setToggleState(s.preview,juce::dontSendNotification);
     apply.setEnabled(s.canApply); discard.setEnabled(s.pending || s.busy); undo.setEnabled(s.canUndo);
     apply.setColour(juce::TextButton::textColourOffId,s.canApply?Colour(0xff2c190d):cream);
-    capture.setButtonText(s.recording?"Cancelar":"Escuchar"); send.setEnabled(!s.recording&&!s.busy&&!prompt.isEmpty());
+    capture.setButtonText(s.recording?"Cancelar":"Escuchar");
+    const bool retry=s.turnFailed && prompt.getText().trim().isEmpty() && s.prompt.isNotEmpty();
+    const auto sendText=retry?"Reintentar":"Enviar";
+    send.setButtonText(sendText);
+    send.setTitle(sendText);
+    send.setEnabled(!s.recording && !s.busy && (retry || !prompt.getText().trim().isEmpty()));
     const auto title= s.recording ? juce::String::fromUTF8("Escuchando la pista") : s.busy ? "Preparando la propuesta"
+        : s.turnFailed ? (s.pending ? "Propuesta anterior" : "Consulta fallida")
         : s.pending ? "Propuesta para escuchar" : s.needsClarification ? "Falta un detalle"
         : s.hasClip ? "Fragmento preparado" : juce::String::fromUTF8("¿Qué quieres cambiar?");
     status.setText(title,juce::dontSendNotification);

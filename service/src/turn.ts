@@ -1,7 +1,7 @@
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
 import { timingSafeEqual } from 'node:crypto';
-import type { Provider, Turn } from './provider.ts';
+import { ProviderFailure, type Provider, type Turn } from './provider.ts';
 
 const defs = JSON.parse(readFileSync(new URL('../../contract/turn.schema.json', import.meta.url), 'utf8')).$defs;
 
@@ -48,6 +48,10 @@ export function createTurnServer(config:{token:string, name:'local-demo'|'http'|
     const finish=(code:number, data:unknown={})=> {
       if (!res.destroyed && !res.writableEnded) {res.writeHead(code,{'Content-Type':'application/json','Cache-Control':'no-store'});res.end(JSON.stringify(data));}
     };
+    const fail=(status:number, code:string) => {
+      if (status>=500 || code==='invalid-turn') console.warn('IA2A · '+status+' · '+code);
+      return finish(status,{code});
+    };
     if(req.url!=='/v1/turn'||req.method!=='POST')return finish(404);
     if(!authorised(req.headers.authorization||'',config.token))return finish(401);
     if(req.headers['content-type']?.split(';')[0].trim()!=='application/json')return finish(415);
@@ -57,7 +61,7 @@ export function createTurnServer(config:{token:string, name:'local-demo'|'http'|
     const abort=new AbortController();
     res.once('close',()=>abort.abort());
     let expired=false;
-    const timer=setTimeout(()=>{expired=true;abort.abort();finish(504);},25000);
+    const timer=setTimeout(()=>{expired=true;abort.abort();fail(504,'provider-timeout');},25000);
     try {
       const chunks:Buffer[]=[];let size=0;
       for await(const chunk of req) {
@@ -67,14 +71,17 @@ export function createTurnServer(config:{token:string, name:'local-demo'|'http'|
       }
       if (expired || abort.signal.aborted) return;
       let turn;
-      try {turn=JSON.parse(Buffer.concat(chunks).toString('utf8'));} catch {return finish(400);}
-      if(!validRequest(turn))return finish(400);
+      try {turn=JSON.parse(Buffer.concat(chunks).toString('utf8'));} catch {return fail(400,'invalid-turn');}
+      if(!validRequest(turn))return fail(400,'invalid-turn');
       const result=await config.provider(turn,abort.signal);
       if(expired || abort.signal.aborted)return;
-      if(!result || typeof result!=='object' || ['version','requestId','provider'].some(key=>Object.hasOwn(result,key)))return finish(502);
+      if(!result || typeof result!=='object' || ['version','requestId','provider'].some(key=>Object.hasOwn(result,key)))return fail(502,'provider-response');
       const reply={...result,version:1,requestId:turn.requestId,provider:config.name};
-      return validResponse(reply,turn)?finish(200,reply):finish(502);
-    } catch {if(!expired && !abort.signal.aborted)finish(502);}
+      return validResponse(reply,turn)?finish(200,reply):fail(502,'provider-response');
+    } catch (error) {
+      if(!expired && !abort.signal.aborted)
+        fail(502,error instanceof ProviderFailure?error.code:'provider-unavailable');
+    }
     finally {clearTimeout(timer);--active;}
   });
   server.requestTimeout=12000;

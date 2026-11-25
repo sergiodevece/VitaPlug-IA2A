@@ -11,7 +11,7 @@ namespace ia2a {
 struct Snapshot {
     juce::String source,effectiveSource,trackName,prompt,message,provider;
     bool reference{},auxActive{},recording{},busy{},pending{},canApply{},canUndo{},preview{},matched{},hasClip{},midSide{};
-    bool needsClarification{};
+    bool needsClarification{},turnFailed{};
     float progress{},inputDb{},outputDb{},reductionDb{};
     int channels{};
     std::array<float,120> grMain{},grSide{};
@@ -71,7 +71,7 @@ private:
     std::optional<Job> job;
     std::stop_source cancellation;
     bool reference=false, matched=true, busy=false, pendingSend=false, closing=false;
-    bool needsClarification=false;
+    bool needsClarification=false, turnFailed=false;
     std::uint64_t knownRevision=0;
     std::atomic<std::uint64_t> monitorRevision{0};
     std::atomic<bool> auxActive{false},ms{false};

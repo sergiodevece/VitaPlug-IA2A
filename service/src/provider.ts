@@ -27,6 +27,17 @@ export type Turn = {
 };
 export type Provider = (turn: Turn, signal: AbortSignal) => Promise<unknown>;
 
+type ProviderFailureCode = 'provider-auth' | 'provider-rate-limit' | 'provider-response' | 'provider-unavailable';
+
+export class ProviderFailure extends Error {
+  readonly code: ProviderFailureCode;
+
+  constructor(code: ProviderFailureCode) {
+    super(code);
+    this.code = code;
+  }
+}
+
 export const demoProvider: Provider = async (turn, signal) => {
   signal?.throwIfAborted();
   const prompt = turn.prompt.toLocaleLowerCase('es');
@@ -117,14 +128,21 @@ export function claudeProvider(config:{key:string,model:string,workspace?:string
     if(!response.ok) {
       console.error('Claude API · HTTP '+response.status);
       await response.body?.cancel();
-      throw new Error('Claude API unavailable');
+      const status=response.status;
+      const code=status===401||status===403?'provider-auth':
+        status===429?'provider-rate-limit':'provider-unavailable';
+      throw new ProviderFailure(code);
     }
-    const message=await readProviderResponse(response);
-    const block=message.content?.find(item=>item.type==='text');
-    if(message.stop_reason!=='end_turn' || typeof block?.text!=='string')
-      throw new Error('incomplete Claude response');
-    const reply=JSON.parse(block.text);
-    if(reply?.goal===null && reply.kind!=='goal') delete reply.goal;
-    return reply;
+    try {
+      const message=await readProviderResponse(response);
+      const block=message.content?.find(item=>item.type==='text');
+      if(message.stop_reason!=='end_turn' || typeof block?.text!=='string')
+        throw new ProviderFailure('provider-response');
+      const reply=JSON.parse(block.text);
+      if(reply?.goal===null && reply.kind!=='goal') delete reply.goal;
+      return reply;
+    } catch {
+      throw new ProviderFailure('provider-response');
+    }
   };
 }
