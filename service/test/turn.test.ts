@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { validRequest, validResponse, createTurnServer } from '../src/turn.ts';
-import { demoProvider, httpProvider } from '../src/provider.ts';
+import { claudeProvider, demoProvider, httpProvider } from '../src/provider.ts';
 
 const cases = JSON.parse(readFileSync(new URL('../../contract/examples/turns.json', import.meta.url), 'utf8'));
 const first = cases[0].request;
@@ -42,4 +42,54 @@ test('HTTP service authenticates clients, bounds requests and validates the HTTP
   const valid=await send(first);assert.equal(valid.status,200);assert.equal((await valid.json()).requestId,first.requestId);
   assert.deepEqual(modelInput,first);
   invalid=true;assert.equal((await send(first)).status,502);
+});
+
+test('Claude Messages receives only the turn and returns validated goals and clarifications', async t => {
+  const requests = [];
+  let answer = {
+    kind:'goal', text:'Daré espacio a las colas y mantendré el golpe.',
+    goal:{allowLR:true,allowMS:true,priorities:[{objective:'releaseTails',intensity:0.8}]}
+  };
+  const upstream = createServer(async (req,res) => {
+    let body='';
+    for await(const chunk of req) body+=chunk;
+    requests.push({headers:req.headers, body:JSON.parse(body)});
+    res.setHeader('Content-Type','application/json');
+    res.end(JSON.stringify({stop_reason:'end_turn',content:[{type:'text',text:JSON.stringify(answer)}]}));
+  });
+  const bridge = createTurnServer({
+    token:'local-only', name:'claude',
+    provider:claudeProvider({key:'fixture-key',model:'fixture-claude',workspace:'wrkspc_test'},
+      await listen(upstream))
+  });
+  const url = await listen(bridge);
+  const stereo = {...first,source:'drums',channels:2,prompt:'Aprieta la pegada del bombo y la caja y deja los platos abiertos'};
+  const send = () => fetch(url+'/v1/turn',{method:'POST',headers:{Authorization:'Bearer local-only','Content-Type':'application/json'},body:JSON.stringify(stereo)});
+
+  const proposed = await send();
+  assert.equal(proposed.status,200);
+  assert.deepEqual(await proposed.json(),{...answer,provider:'claude',version:1,requestId:stereo.requestId});
+  const {headers,body} = requests[0];
+  assert.equal(headers['x-api-key'],'fixture-key');
+  assert.equal(headers['anthropic-workspace-id'],'wrkspc_test');
+  assert.equal(headers['anthropic-version'],'2023-06-01');
+  assert.equal(headers.authorization,undefined);
+  assert.equal(body.model,'fixture-claude');
+  assert.equal(body.output_config.format.type,'json_schema');
+  assert.equal(body.output_config.format.schema.additionalProperties,false);
+  assert.deepEqual(JSON.parse(body.messages[0].content),stereo);
+
+  answer={kind:'question',text:'¿Te molestan los ataques o las colas?',goal:null};
+  const question=await send();
+  assert.equal(question.status,200);
+  assert.equal((await question.json()).goal,undefined);
+  answer={kind:'goal',text:'Una propuesta inválida.',goal:null};
+  assert.equal((await send()).status,502);
+
+  async function listen(server) {
+    server.listen(0,'127.0.0.1');
+    await once(server,'listening');
+    t.after(()=>{server.closeAllConnections();return new Promise(resolve=>server.close(resolve))});
+    return 'http://127.0.0.1:'+server.address().port;
+  }
 });

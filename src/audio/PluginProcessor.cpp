@@ -158,6 +158,8 @@ void Processor::runWorker() {
                 if(reply.kind==ClientReply::Kind::goal && !j.stop.stop_requested()) {
                     calibration=calibrate(*j.clip,j.applied,j.seed,reply.goal,j.stop);
                     explanation=juce::String::fromUTF8(calibration.explanation.c_str());
+                    if(reply.provider=="claude" && calibration.outcome==Outcome::Candidate)
+                        explanation=reply.text;
                 }
                 if(!f.hasReferenceSignal && !j.clip->reference.empty())
                     explanation+=juce::String::fromUTF8(" · Referencia en silencio. Se ha analizado solo la pista.");

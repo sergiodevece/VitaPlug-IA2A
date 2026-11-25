@@ -119,13 +119,13 @@ var post(const String& url,const String& token,const String& body,std::stop_toke
     juce::WebInputStream stream(juce::URL(url).withPOSTData(body),true);
     String headers="Content-Type: application/json\r\n";
     if(token.isNotEmpty()) headers+="Authorization: Bearer "+token+"\r\n";
-    stream.withExtraHeaders(headers).withConnectionTimeout(10000).withNumRedirectsToFollow(0);
+    stream.withExtraHeaders(headers).withConnectionTimeout(28000).withNumRedirectsToFollow(0);
     std::stop_callback interrupt(stop,[&]{stream.cancel();});
     std::mutex timerMutex;
     std::condition_variable_any timer;
     std::jthread deadline([&](std::stop_token finished){
         std::unique_lock lock(timerMutex);
-        timer.wait_for(lock,finished,12s,[]{return false;});
+        timer.wait_for(lock,finished,30s,[]{return false;});
         if(!finished.stop_requested())stream.cancel();
     });
     if(stop.stop_requested() || !stream.connect(nullptr) || stream.getStatusCode()!=200) return {};

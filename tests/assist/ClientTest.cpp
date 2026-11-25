@@ -33,14 +33,15 @@ int main(int argc, char** argv) {
                 for (auto p : reply.goal.priorities) reduced |= p.objective == Objective::Air && p.intensity < 0;
                 expect(reduced, "refinement lost");
             }
-            if (argc == 2) {
+            if (argc >= 2) {
                 Client remote(argv[1], "test-token");
                 const auto result = remote.request(turn);
+                if (argc >= 3) expect(result.provider == argv[2], "wrong connected provider");
                 expect(result.kind == reply.kind && result.requestId == reply.requestId, "HTTP client integration");
             }
             std::stop_source stop; stop.request_stop();
             expect(local.request(turn, stop.get_token()).kind == ClientReply::Kind::cancelled, "cancel");
-            if (argc==2) {
+            if (argc>=2) {
                 Client wrongToken(argv[1], "incorrect");
                 expect(wrongToken.request(turn).kind==ClientReply::Kind::error, "server error fell back to local answer");
             }

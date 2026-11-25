@@ -42,7 +42,7 @@ function authorised(value:string, token:string) {
   return !token || (actual.length===expected.length && timingSafeEqual(actual,expected));
 }
 
-export function createTurnServer(config:{token:string, name:'local-demo'|'http', provider:Provider}) {
+export function createTurnServer(config:{token:string, name:'local-demo'|'http'|'claude', provider:Provider}) {
   let active=0;
   const server=createServer(async (req,res)=>{
     const finish=(code:number, data:unknown={})=> {
@@ -57,7 +57,7 @@ export function createTurnServer(config:{token:string, name:'local-demo'|'http',
     const abort=new AbortController();
     res.once('close',()=>abort.abort());
     let expired=false;
-    const timer=setTimeout(()=>{expired=true;abort.abort();finish(504);},10000);
+    const timer=setTimeout(()=>{expired=true;abort.abort();finish(504);},25000);
     try {
       const chunks:Buffer[]=[];let size=0;
       for await(const chunk of req) {

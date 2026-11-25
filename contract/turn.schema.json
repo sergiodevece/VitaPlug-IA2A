@@ -213,7 +213,8 @@
             "provider": {
               "enum": [
                 "local-demo",
-                "http"
+                "http",
+                "claude"
               ]
             },
             "kind": {
@@ -253,7 +254,8 @@
             "provider": {
               "enum": [
                 "local-demo",
-                "http"
+                "http",
+                "claude"
               ]
             },
             "kind": {

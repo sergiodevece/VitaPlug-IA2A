@@ -183,7 +183,7 @@ void Editor::paint(juce::Graphics& g) {
     text(g,"2A",{91,22,78,46},brand,amber);
     text(g,"VitaPlug",{165,30,96,20},font(16,look.face),cream);
     text(g,"O P T I C A L   C O M P R E S S O R",{165,52,208,13},font(11,look.face),cream);
-    const auto providerText=s.provider=="local-demo"?juce::String::fromUTF8("Intérprete local de prueba"):s.provider=="http"?juce::String("Servicio configurado"):s.provider;
+    const auto providerText=s.provider=="local-demo"?juce::String::fromUTF8("Intérprete local de prueba"):s.provider=="http"?juce::String("Servicio configurado"):s.provider=="claude"?juce::String("Claude conectado"):s.provider;
     text(g,providerText,{204,439,390,32},font(15,look.face),cream);
     text(g,"FUENTE",{618,42,52,31},font(15,look.face),cream);
     inset(g,screen,Colour(0xff14291e),Colour(0xff07130f));
