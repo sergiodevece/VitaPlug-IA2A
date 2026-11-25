@@ -29,10 +29,14 @@ int main(int argc,char** argv) {
         auto& send = widget<juce::TextButton>(editor,"send");
         check(!apply.isEnabled() && !after.isEnabled(),"An empty session cannot accept or audition a candidate");
         check(prompt.getWantsKeyboardFocus() && graph.getWantsKeyboardFocus(),"Keyboard focus is missing");
+        auto& signature = widget<juce::Label>(editor,"designer-credit");
+        check(signature.isVisible() && signature.getText()=="designed by SerxDev","VitaPlug designer credit is missing");
+        const auto signatureBounds = signature.getBounds();
         const int height = editor.getHeight();
         const auto initialBefore = before.getBounds();
         graph.onClick();
         check(editor.getHeight()>height && initialBefore==before.getBounds(),"Opening the graph moved the comparison controls");
+        check(signature.isVisible() && signature.getBounds()==signatureBounds,"Opening the graph moved the designer credit");
         graph.onClick();
         check(editor.getHeight()==height,"The drawer did not close");
         source.setSelectedId(2,juce::sendNotificationSync);
@@ -73,14 +77,19 @@ int main(int argc,char** argv) {
         match.setSelectedId(1,juce::sendNotificationSync);
         check(processor.snapshot().matched,"Level match was not selected");
         play(32000*12);
-        if(argc==2) {
-            juce::File file(juce::String::fromUTF8(argv[1]));
+        auto saveSnapshot = [&](const char* path) {
+            juce::File file(juce::String::fromUTF8(path));
             juce::FileOutputStream out(file);
             if(!out.openedOk()) throw std::runtime_error("Snapshot path unavailable");
             out.setPosition(0); out.truncate();
             juce::PNGImageFormat png;
             if(!png.writeImageToStream(editor.createComponentSnapshot(editor.getLocalBounds()),out))
                 throw std::runtime_error("Snapshot failed");
+        };
+        if(argc>=2) saveSnapshot(argv[1]);
+        if(argc>=3) {
+            graph.onClick();
+            saveSnapshot(argv[2]);
         }
         auto& drop=widget<juce::TextButton>(editor,"discard");
         drop.onClick(); check(!processor.snapshot().pending && !apply.isEnabled(),"Discard retained the candidate");

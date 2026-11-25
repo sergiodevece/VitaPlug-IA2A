@@ -27,7 +27,7 @@ private:
     juce::ComboBox source, level;
     juce::TextButton reference, capture, send, before, after, apply, discard, undo, disclosure;
     juce::TextEditor prompt;
-    juce::Label status, request, response;
+    juce::Label status, request, response, designerCredit;
     juce::Image material, plate;
     bool expanded{};
 };

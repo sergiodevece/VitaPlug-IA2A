@@ -93,6 +93,10 @@ Editor::Editor(Processor& proc) : AudioProcessorEditor(proc), processor(proc) {
         l.setBorderSize({0,0,0,0}); l.setJustificationType(juce::Justification::topLeft); addAndMakeVisible(l);
     };
     label(status,"status",24,green); label(request,"request",17,phosphor); label(response,"response",17,cream);
+    label(designerCredit,"designer-credit",16,cream);
+    designerCredit.setText("designed by SerxDev",juce::dontSendNotification);
+    designerCredit.setFont(font(16,look.face));
+    designerCredit.setJustificationType(juce::Justification::centredRight);
     source.onChange=[this] { processor.setSource(source.getSelectedId()==1?"voice":source.getSelectedId()==2?"drums":"other"); refresh(); };
     reference.onClick=[this] { processor.setReference(!processor.snapshot().reference); refresh(); };
     capture.onClick=[this] { processor.captureAudio(); refresh(); };
@@ -169,6 +173,7 @@ void Editor::resized() {
     before.setBounds(67,379,62,36); after.setBounds(134,379,77,36); level.setBounds(219,379,123,36);
     undo.setBounds(673,379,80,36); discard.setBounds(759,379,82,36); apply.setBounds(847,379,86,36);
     disclosure.setBounds(51,438,135,34);
+    designerCredit.setBounds(749,438,200,34);
 }
 void Editor::paint(juce::Graphics& g) {
     const auto s=processor.snapshot();
